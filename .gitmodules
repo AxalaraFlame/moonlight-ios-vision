@@ -4,3 +4,6 @@
 [submodule "X1Kit"]
 	path = X1Kit
 	url = https://github.com/cgutman/X1Kit.git
+[submodule "ThirdParty/alvr-visionos"]
+	path = ThirdParty/alvr-visionos
+	url = https://github.com/alvr-org/alvr-visionos.git
