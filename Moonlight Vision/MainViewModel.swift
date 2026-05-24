@@ -47,6 +47,7 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
     @Published var currentlyStreamingAppId: String? = nil
     @Published var reconnectCooldownUntil: Date? = nil
     @Published var isSwappingRenderers: Bool = false
+    @Published var activeXRStreamingMode: StreamingMode? = nil
     
     @Published var showLanguagePrompt = false
     @Published var streamSettings: TemporarySettings
@@ -161,6 +162,7 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
             guard streamState == .stopping else { return }
             shouldCloseStream = false
             currentlyStreamingAppId = nil
+            activeXRStreamingMode = nil
             streamState = .idle
             reconnectCooldownUntil = nil
             if !isSwappingRenderers {
@@ -281,6 +283,7 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
         streamState = .idle
         shouldCloseStream = false
         currentlyStreamingAppId = nil
+        activeXRStreamingMode = nil
         reconnectCooldownUntil = nil
         activelyStreaming = false
     }
@@ -745,6 +748,9 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
         activelyStreaming = true
         streamState = .starting
         currentlyStreamingAppId = app.id ?? app.name
+        if activeXRStreamingMode == nil {
+            activeXRStreamingMode = streamSettings.realitykitImmersiveMode ? .realityKitImmersive : (streamSettings.renderer == .realitykit ? .realityKitWindow : .uiKitWindow)
+        }
         print("stream - Stream configuration complete. Ready to start streaming.")
         return currentStreamConfig
     }

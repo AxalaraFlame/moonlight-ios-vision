@@ -116,7 +116,17 @@ struct MoonlightVisionApp: SwiftUI.App {
                 }
                 .immersionStyle(selection: $immersionManager.currentStyle, in: .mixed, .progressive, .full)
 
-                // 3. UIKit Window
+                // 3. Independent VR Immersive Space (ALVR backend placeholder)
+                ImmersiveSpace(id: "ALVRImmersiveSpace") {
+                    ALVRImmersiveView()
+#if os(visionOS)
+                        .applyUpperLimbVisibility()
+#endif
+                        .environmentObject(appDelegate.mainViewModel)
+                }
+                .immersionStyle(selection: $immersionManager.currentStyle, in: .mixed, .progressive, .full)
+
+                // 4. UIKit Window
                 WindowGroup(id: "classicStreamingWindow", for: StreamConfiguration.self) { streamConfig in
                     UIKitStreamView(streamConfig: streamConfig)
                     .environmentObject(appDelegate.mainViewModel)

@@ -17,6 +17,21 @@
 		04F5ECAC2EE3759C009FF87D /* ImmersionStyleManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F5ECAB2EE3759C009FF87D /* ImmersionStyleManager.swift */; };
 		04F5ECAF2EE37A7F009FF87D /* StandardControlPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F5ECAD2EE37A7F009FF87D /* StandardControlPanelView.swift */; };
 		04F5ECB12EE37A80009FF87D /* VolumeControlPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F5ECB02EE37A80009FF87D /* VolumeControlPanelView.swift */; };
+		A9D000102FABC00100AAA001 /* XRStreamingTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000202FABC00100AAA001 /* XRStreamingTypes.swift */; };
+		A9D000112FABC00100AAA001 /* MoonlightBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000212FABC00100AAA001 /* MoonlightBackend.swift */; };
+		A9D000122FABC00100AAA001 /* CloudXRBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000222FABC00100AAA001 /* CloudXRBackend.swift */; };
+		A9D000132FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000232FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift */; };
+		A9D002102FABC20100AAA001 /* XRStreamingBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002202FABC20100AAA001 /* XRStreamingBackend.swift */; };
+		A9D002112FABC20100AAA001 /* ALVRClientCoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002212FABC20100AAA001 /* ALVRClientCoreBridge.swift */; };
+		A9D002122FABC20100AAA001 /* ALVRVideoBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002222FABC20100AAA001 /* ALVRVideoBridge.swift */; };
+		A9D002132FABC20100AAA001 /* ALVRRendererBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002232FABC20100AAA001 /* ALVRRendererBridge.swift */; };
+		A9D002142FABC20100AAA001 /* ALVRInputBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002242FABC20100AAA001 /* ALVRInputBridge.swift */; };
+		A9D001102FABC10100AAA001 /* ALVRBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001202FABC10100AAA001 /* ALVRBackend.swift */; };
+		A9D001112FABC10100AAA001 /* ALVRSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001212FABC10100AAA001 /* ALVRSessionManager.swift */; };
+		A9D001122FABC10100AAA001 /* ALVRConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001222FABC10100AAA001 /* ALVRConnectionView.swift */; };
+		A9D001132FABC10100AAA001 /* ALVRImmersiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001232FABC10100AAA001 /* ALVRImmersiveView.swift */; };
+		A9D001142FABC10100AAA001 /* ALVRRendererContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001242FABC10100AAA001 /* ALVRRendererContainerView.swift */; };
+		A9D001152FABC10100AAA001 /* ALVRDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */; };
 		3E265EDC2F9D5BCA00B0A566 /* AUSpatialMixer.m in Sources */ = {isa = PBXBuildFile; fileRef = 3E265ED12F9D5BCA00B0A566 /* AUSpatialMixer.m */; };
 		3E265EDD2F9D5BCA00B0A566 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 3E265EDA2F9D5BCA00B0A566 /* TPCircularBuffer.c */; };
 		3E265EDE2F9D5BCA00B0A566 /* AVSync.m in Sources */ = {isa = PBXBuildFile; fileRef = 3E265ED32F9D5BCA00B0A566 /* AVSync.m */; };
@@ -317,6 +332,21 @@
 		04F5ECAB2EE3759C009FF87D /* ImmersionStyleManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImmersionStyleManager.swift; sourceTree = "<group>"; };
 		04F5ECAD2EE37A7F009FF87D /* StandardControlPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardControlPanelView.swift; sourceTree = "<group>"; };
 		04F5ECB02EE37A80009FF87D /* VolumeControlPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeControlPanelView.swift; sourceTree = "<group>"; };
+		A9D000202FABC00100AAA001 /* XRStreamingTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XRStreamingTypes.swift; sourceTree = "<group>"; };
+		A9D000212FABC00100AAA001 /* MoonlightBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonlightBackend.swift; sourceTree = "<group>"; };
+		A9D000222FABC00100AAA001 /* CloudXRBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudXRBackend.swift; sourceTree = "<group>"; };
+		A9D000232FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VRStreamingImmersiveSpaceView.swift; sourceTree = "<group>"; };
+		A9D002202FABC20100AAA001 /* XRStreamingBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XRStreamingBackend.swift; sourceTree = "<group>"; };
+		A9D001202FABC10100AAA001 /* ALVRBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRBackend.swift; sourceTree = "<group>"; };
+		A9D001212FABC10100AAA001 /* ALVRSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRSessionManager.swift; sourceTree = "<group>"; };
+		A9D001222FABC10100AAA001 /* ALVRConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRConnectionView.swift; sourceTree = "<group>"; };
+		A9D001232FABC10100AAA001 /* ALVRImmersiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRImmersiveView.swift; sourceTree = "<group>"; };
+		A9D001242FABC10100AAA001 /* ALVRRendererContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRRendererContainerView.swift; sourceTree = "<group>"; };
+		A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRDiagnosticsView.swift; sourceTree = "<group>"; };
+		A9D002212FABC20100AAA001 /* ALVRClientCoreBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRClientCoreBridge.swift; sourceTree = "<group>"; };
+		A9D002222FABC20100AAA001 /* ALVRVideoBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRVideoBridge.swift; sourceTree = "<group>"; };
+		A9D002232FABC20100AAA001 /* ALVRRendererBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRRendererBridge.swift; sourceTree = "<group>"; };
+		A9D002242FABC20100AAA001 /* ALVRInputBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRInputBridge.swift; sourceTree = "<group>"; };
 		3E0863FF2ECD6BB7006549CB /* Moonlight XrOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Moonlight XrOS.entitlements"; sourceTree = "<group>"; };
 		3E265ECC2F9D5BCA00B0A566 /* AllocatedAudioBufferList.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AllocatedAudioBufferList.h; sourceTree = "<group>"; };
 		3E265ECD2F9D5BCA00B0A566 /* AllocatedAudioBufferList.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AllocatedAudioBufferList.m; sourceTree = "<group>"; };
@@ -822,8 +852,47 @@
 				B1EDB1342D4D95A700EB1839 /* UIKitStreamView.swift */,
 				3E86FC1C2D4FFDED0016BB8E /* UpdatesView.swift */,
 				6581B5F02D5434100022400F /* VideoTypes.swift */,
+				A9D000302FABC00100AAA001 /* XRStreaming */,
 			);
 			path = "Moonlight Vision";
+			sourceTree = "<group>";
+		};
+		A9D000302FABC00100AAA001 /* XRStreaming */ = {
+			isa = PBXGroup;
+			children = (
+				A9D001302FABC10100AAA001 /* ALVR */,
+				A9D000222FABC00100AAA001 /* CloudXRBackend.swift */,
+				A9D000212FABC00100AAA001 /* MoonlightBackend.swift */,
+				A9D000232FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift */,
+				A9D002202FABC20100AAA001 /* XRStreamingBackend.swift */,
+				A9D000202FABC00100AAA001 /* XRStreamingTypes.swift */,
+			);
+			path = XRStreaming;
+			sourceTree = "<group>";
+		};
+		A9D001302FABC10100AAA001 /* ALVR */ = {
+			isa = PBXGroup;
+			children = (
+				A9D002302FABC20100AAA001 /* ALVRBridge */,
+				A9D001202FABC10100AAA001 /* ALVRBackend.swift */,
+				A9D001222FABC10100AAA001 /* ALVRConnectionView.swift */,
+				A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */,
+				A9D001232FABC10100AAA001 /* ALVRImmersiveView.swift */,
+				A9D001242FABC10100AAA001 /* ALVRRendererContainerView.swift */,
+				A9D001212FABC10100AAA001 /* ALVRSessionManager.swift */,
+			);
+			path = ALVR;
+			sourceTree = "<group>";
+		};
+		A9D002302FABC20100AAA001 /* ALVRBridge */ = {
+			isa = PBXGroup;
+			children = (
+				A9D002212FABC20100AAA001 /* ALVRClientCoreBridge.swift */,
+				A9D002242FABC20100AAA001 /* ALVRInputBridge.swift */,
+				A9D002232FABC20100AAA001 /* ALVRRendererBridge.swift */,
+				A9D002222FABC20100AAA001 /* ALVRVideoBridge.swift */,
+			);
+			path = ALVRBridge;
 			sourceTree = "<group>";
 		};
 		F7A119FE2B5DF387001E8686 /* Packages */ = {
@@ -1450,13 +1519,18 @@
 				3E3791CA2ED2A4F5004B22A2 /* RealityKitStreamView.swift in Sources */,
 				04F5ECAF2EE37A7F009FF87D /* StandardControlPanelView.swift in Sources */,
 				04F5ECB12EE37A80009FF87D /* VolumeControlPanelView.swift in Sources */,
+				A9D000112FABC00100AAA001 /* MoonlightBackend.swift in Sources */,
+				A9D001102FABC10100AAA001 /* ALVRBackend.swift in Sources */,
 				E77582EB2D5550D500948545 /* AudioHelpers.swift in Sources */,
+				A9D002102FABC20100AAA001 /* XRStreamingBackend.swift in Sources */,
 				F7A119162B5DDF73001E8686 /* AppAssetRetriever.m in Sources */,
 				F7A119172B5DDF73001E8686 /* WakeOnLanManager.m in Sources */,
 				B1EDB1352D4D95A700EB1839 /* StreamControls.swift in Sources */,
 				C2769339D74B457E85143624 /* AV1Parser.swift in Sources */,
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* StreamViewStubs.swift in Sources */,
 				B1EDB1362D4D95A700EB1839 /* DrawableVideoDecoder.swift in Sources */,
+				A9D000102FABC00100AAA001 /* XRStreamingTypes.swift in Sources */,
+				A9D001122FABC10100AAA001 /* ALVRConnectionView.swift in Sources */,
 				3E86FC1D2D4FFDF20016BB8E /* UpdatesView.swift in Sources */,
 				B1EDB1372D4D95A700EB1839 /* UIKitStreamView.swift in Sources */,
 				B1EDB1392D4D95A700EB1839 /* ObservableConnectionManager.swift in Sources */,
@@ -1490,6 +1564,10 @@
 				3E265EDD2F9D5BCA00B0A566 /* TPCircularBuffer.c in Sources */,
 				3E265EDE2F9D5BCA00B0A566 /* AVSync.m in Sources */,
 				3E265F532F9D87F000B0A566 /* LocalizationHelper.swift in Sources */,
+				A9D000122FABC00100AAA001 /* CloudXRBackend.swift in Sources */,
+				A9D002112FABC20100AAA001 /* ALVRClientCoreBridge.swift in Sources */,
+				A9D001142FABC10100AAA001 /* ALVRRendererContainerView.swift in Sources */,
+				A9D002122FABC20100AAA001 /* ALVRVideoBridge.swift in Sources */,
 				3E265EDF2F9D5BCA00B0A566 /* AllocatedAudioBufferList.m in Sources */,
 				3E265EE02F9D5BCA00B0A566 /* OutputAU.m in Sources */,
 				3E265EE12F9D5BCA00B0A566 /* AudioStats.m in Sources */,
@@ -1514,9 +1592,15 @@
 				04F5ECAC2EE3759C009FF87D /* ImmersionStyleManager.swift in Sources */,
 				F71801422B65483D00A9336B /* AppsView.swift in Sources */,
 				F71801572B72FF0000A9336B /* StreamModeSelectionOverlay.swift in Sources */,
+				A9D001112FABC10100AAA001 /* ALVRSessionManager.swift in Sources */,
+				A9D002142FABC20100AAA001 /* ALVRInputBridge.swift in Sources */,
+				A9D000132FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift in Sources */,
 				F7199B002B72FC1400E6D62D /* TemporarySettings.swift in Sources */,
+				A9D001132FABC10100AAA001 /* ALVRImmersiveView.swift in Sources */,
 				F7A119372B5DDF73001E8686 /* AppAssetResponse.m in Sources */,
 				F7A119382B5DDF73001E8686 /* DataManager.m in Sources */,
+				A9D001152FABC10100AAA001 /* ALVRDiagnosticsView.swift in Sources */,
+				A9D002132FABC20100AAA001 /* ALVRRendererBridge.swift in Sources */,
 				F7A1193A2B5DDF73001E8686 /* ServerInfoResponse.m in Sources */,
 				F778956E2B65975900F02568 /* SDLMainWrapper.m in Sources */,
 				F7A1193B2B5DDF73001E8686 /* StreamManager.m in Sources */,

@@ -16,6 +16,7 @@ struct MainContentView: View {
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openImmersiveSpace) private var openImmersiveSpace
+    @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var selectedHost: TemporaryHost?
@@ -90,7 +91,15 @@ struct MainContentView: View {
                                         openWindow(id: id)
                                     }
                                 case .immersiveSpace(let id):
-                                    Task { await openImmersiveSpace(id: id) }
+                                    Task {
+                                        if viewModel.activeXRStreamingMode == .vr {
+                                            await openImmersiveSpace(id: id)
+                                        } else if let config = viewModel.savedStreamConfigForResume {
+                                            _ = try? await openImmersiveSpace(id: id, value: config)
+                                        } else {
+                                            await openImmersiveSpace(id: id)
+                                        }
+                                    }
                                 }
                                 
                                 dismissWindow(id: "mainView")
@@ -99,6 +108,13 @@ struct MainContentView: View {
                         ToolbarItem(placement: .destructiveAction) {
                             Button(viewModel.localized("stop"), systemImage: "stop.circle.fill") {
                                 Task {
+                                    if viewModel.activeXRStreamingMode == .vr {
+                                        NotificationCenter.default.post(name: Notification.Name("RequestStreamCloseFromMainMenu"), object: nil)
+                                        await ALVRBackend().endSession(viewModel: viewModel)
+                                        await dismissImmersiveSpace()
+                                        return
+                                    }
+
                                     // Post notification first — RealityKitStreamView/UIKitStreamView
                                     // receive it and call triggerCloseSequence/teardown which handles
                                     // dismissing their own window. Avoid calling dismissWindow here for
@@ -327,6 +343,15 @@ extension MainViewModel {
     
     /// Determines the correct Window ID or ImmersiveSpace ID based on current settings
     func getStreamDestination() -> StreamDestination {
+        if let activeXRStreamingMode {
+            switch activeXRStreamingMode.destination {
+            case .window(let id):
+                return .window(id: id)
+            case .immersiveSpace(let id):
+                return .immersiveSpace(id: id)
+            }
+        }
+
         switch streamSettings.renderer {
         case .classic:
             // UIKit renderer always uses a standard window
