@@ -13,9 +13,100 @@ struct ALVRDecoderConfigSnapshot: Sendable {
     let size: UInt64
     let prefixHex: String?
     let asciiPreview: String?
+    let configNalUnitCount: Int
+    let configCodecGuess: String
+    let hevcVpsCount: Int
+    let hevcSpsCount: Int
+    let hevcPpsCount: Int
+    let h264SpsCount: Int
+    let h264PpsCount: Int
+    let parameterSetsReady: Bool
+    let videoToolboxReady: Bool
+    let configNalTypes: [String]
+    let hevcVpsSize: Int?
+    let hevcSpsSize: Int?
+    let hevcPpsSize: Int?
+    let h264SpsSize: Int?
+    let h264PpsSize: Int?
+    let parameterSetPrefixHex: String?
+    let missingDecoderPrerequisites: [String]
     let errorDescription: String?
     let triggerReason: String
     let messages: [String]
+
+    init(
+        attempted: Bool,
+        success: Bool,
+        size: UInt64,
+        prefixHex: String?,
+        asciiPreview: String?,
+        configNalUnitCount: Int = 0,
+        configCodecGuess: String = "unknown",
+        hevcVpsCount: Int = 0,
+        hevcSpsCount: Int = 0,
+        hevcPpsCount: Int = 0,
+        h264SpsCount: Int = 0,
+        h264PpsCount: Int = 0,
+        parameterSetsReady: Bool = false,
+        videoToolboxReady: Bool = false,
+        configNalTypes: [String] = [],
+        hevcVpsSize: Int? = nil,
+        hevcSpsSize: Int? = nil,
+        hevcPpsSize: Int? = nil,
+        h264SpsSize: Int? = nil,
+        h264PpsSize: Int? = nil,
+        parameterSetPrefixHex: String? = nil,
+        missingDecoderPrerequisites: [String] = [],
+        errorDescription: String?,
+        triggerReason: String,
+        messages: [String]
+    ) {
+        self.attempted = attempted
+        self.success = success
+        self.size = size
+        self.prefixHex = prefixHex
+        self.asciiPreview = asciiPreview
+        self.configNalUnitCount = configNalUnitCount
+        self.configCodecGuess = configCodecGuess
+        self.hevcVpsCount = hevcVpsCount
+        self.hevcSpsCount = hevcSpsCount
+        self.hevcPpsCount = hevcPpsCount
+        self.h264SpsCount = h264SpsCount
+        self.h264PpsCount = h264PpsCount
+        self.parameterSetsReady = parameterSetsReady
+        self.videoToolboxReady = videoToolboxReady
+        self.configNalTypes = configNalTypes
+        self.hevcVpsSize = hevcVpsSize
+        self.hevcSpsSize = hevcSpsSize
+        self.hevcPpsSize = hevcPpsSize
+        self.h264SpsSize = h264SpsSize
+        self.h264PpsSize = h264PpsSize
+        self.parameterSetPrefixHex = parameterSetPrefixHex
+        self.missingDecoderPrerequisites = missingDecoderPrerequisites
+        self.errorDescription = errorDescription
+        self.triggerReason = triggerReason
+        self.messages = messages
+    }
+}
+
+private struct ALVRDecoderConfigParseResult {
+    var configNalUnitCount = 0
+    var configCodecGuess = "unknown"
+    var hevcVpsCount = 0
+    var hevcSpsCount = 0
+    var hevcPpsCount = 0
+    var h264SpsCount = 0
+    var h264PpsCount = 0
+    var parameterSetsReady = false
+    var videoToolboxReady = false
+    var configNalTypes: [String] = []
+    var hevcVpsSize: Int?
+    var hevcSpsSize: Int?
+    var hevcPpsSize: Int?
+    var h264SpsSize: Int?
+    var h264PpsSize: Int?
+    var parameterSetPrefixHex: String?
+    var missingDecoderPrerequisites: [String] = []
 }
 
 #if canImport(ALVRClientCore)
@@ -362,6 +453,7 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
                 return "."
             }
             .joined()
+        let parseResult = parseDecoderConfigNalUnits(bytes)
 
         return ALVRDecoderConfigSnapshot(
             attempted: true,
@@ -369,10 +461,206 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
             size: requestedSize,
             prefixHex: prefixHex.isEmpty ? nil : prefixHex,
             asciiPreview: asciiPreview.isEmpty ? nil : asciiPreview,
+            configNalUnitCount: parseResult.configNalUnitCount,
+            configCodecGuess: parseResult.configCodecGuess,
+            hevcVpsCount: parseResult.hevcVpsCount,
+            hevcSpsCount: parseResult.hevcSpsCount,
+            hevcPpsCount: parseResult.hevcPpsCount,
+            h264SpsCount: parseResult.h264SpsCount,
+            h264PpsCount: parseResult.h264PpsCount,
+            parameterSetsReady: parseResult.parameterSetsReady,
+            videoToolboxReady: parseResult.videoToolboxReady,
+            configNalTypes: parseResult.configNalTypes,
+            hevcVpsSize: parseResult.hevcVpsSize,
+            hevcSpsSize: parseResult.hevcSpsSize,
+            hevcPpsSize: parseResult.hevcPpsSize,
+            h264SpsSize: parseResult.h264SpsSize,
+            h264PpsSize: parseResult.h264PpsSize,
+            parameterSetPrefixHex: parseResult.parameterSetPrefixHex,
+            missingDecoderPrerequisites: parseResult.missingDecoderPrerequisites,
             errorDescription: nil,
             triggerReason: triggerReason,
             messages: messages
         )
+    }
+
+    private nonisolated static func parseDecoderConfigNalUnits(_ bytes: [UInt8]) -> ALVRDecoderConfigParseResult {
+        let maxSingleParameterSetSize = 64 * 1024
+        let maxTotalParameterSetSize = 256 * 1024
+        let nalRanges = annexBNalRanges(in: bytes)
+        var result = ALVRDecoderConfigParseResult()
+        var hasHevcSignal = false
+        var hasH264Signal = false
+        var savedParameterSetBytes: [UInt8] = []
+
+        result.configNalUnitCount = nalRanges.count
+
+        for range in nalRanges {
+            guard range.lowerBound < range.upperBound else {
+                continue
+            }
+
+            let firstByte = bytes[range.lowerBound]
+            let nalSize = range.count
+            let hevcNalType = Int((firstByte & 0x7E) >> 1)
+            let h264NalType = Int(firstByte & 0x1F)
+            let looksLikeCommonHevcHeader = (firstByte & 0x01) == 0
+            var labels: [String] = []
+            var isParameterSet = false
+
+            if looksLikeCommonHevcHeader {
+                switch hevcNalType {
+                case 32:
+                    hasHevcSignal = true
+                    result.hevcVpsCount += 1
+                    result.hevcVpsSize = nalSize
+                    labels.append("HEVC_VPS(32)")
+                    isParameterSet = true
+                case 33:
+                    hasHevcSignal = true
+                    result.hevcSpsCount += 1
+                    result.hevcSpsSize = nalSize
+                    labels.append("HEVC_SPS(33)")
+                    isParameterSet = true
+                case 34:
+                    hasHevcSignal = true
+                    result.hevcPpsCount += 1
+                    result.hevcPpsSize = nalSize
+                    labels.append("HEVC_PPS(34)")
+                    isParameterSet = true
+                case 19:
+                    hasHevcSignal = true
+                    labels.append("HEVC_IDR_W_RADL(19)")
+                case 20:
+                    hasHevcSignal = true
+                    labels.append("HEVC_IDR_N_LP(20)")
+                case 39:
+                    hasHevcSignal = true
+                    labels.append("HEVC_PREFIX_SEI(39)")
+                case 40:
+                    hasHevcSignal = true
+                    labels.append("HEVC_SUFFIX_SEI(40)")
+                default:
+                    break
+                }
+            }
+
+            switch h264NalType {
+            case 7:
+                hasH264Signal = true
+                result.h264SpsCount += 1
+                result.h264SpsSize = nalSize
+                labels.append("H264_SPS(7)")
+                isParameterSet = true
+            case 8:
+                hasH264Signal = true
+                result.h264PpsCount += 1
+                result.h264PpsSize = nalSize
+                labels.append("H264_PPS(8)")
+                isParameterSet = true
+            case 5:
+                hasH264Signal = true
+                labels.append("H264_IDR(5)")
+            default:
+                break
+            }
+
+            if labels.isEmpty {
+                labels.append("HEVC_\(hevcNalType)/H264_\(h264NalType)")
+            }
+
+            if result.configNalTypes.count < 16 {
+                result.configNalTypes.append(labels.joined(separator: " | "))
+            }
+
+            if isParameterSet,
+               nalSize <= maxSingleParameterSetSize,
+               savedParameterSetBytes.count + nalSize <= maxTotalParameterSetSize {
+                savedParameterSetBytes.append(contentsOf: bytes[range])
+            }
+        }
+
+        if hasHevcSignal && hasH264Signal {
+            result.configCodecGuess = "mixed/ambiguous"
+        } else if hasHevcSignal {
+            result.configCodecGuess = "hevc"
+        } else if hasH264Signal {
+            result.configCodecGuess = "h264"
+        } else {
+            result.configCodecGuess = "unknown"
+        }
+
+        let hevcReady = result.hevcVpsCount > 0 && result.hevcSpsCount > 0 && result.hevcPpsCount > 0
+        let h264Ready = result.h264SpsCount > 0 && result.h264PpsCount > 0
+        switch result.configCodecGuess {
+        case "hevc":
+            result.parameterSetsReady = hevcReady
+            if !hevcReady {
+                result.missingDecoderPrerequisites.append("HEVC VPS/SPS/PPS not found")
+            }
+        case "h264":
+            result.parameterSetsReady = h264Ready
+            if !h264Ready {
+                result.missingDecoderPrerequisites.append("H264 SPS/PPS not found")
+            }
+        case "mixed/ambiguous":
+            result.parameterSetsReady = hevcReady || h264Ready
+            if !hevcReady {
+                result.missingDecoderPrerequisites.append("HEVC VPS/SPS/PPS not found")
+            }
+            if !h264Ready {
+                result.missingDecoderPrerequisites.append("H264 SPS/PPS not found")
+            }
+        default:
+            result.parameterSetsReady = false
+            result.missingDecoderPrerequisites.append("No H264 or HEVC parameter sets found")
+        }
+        result.videoToolboxReady = result.parameterSetsReady
+        result.parameterSetPrefixHex = prefixHex(for: savedParameterSetBytes, maxBytes: 64)
+        return result
+    }
+
+    private nonisolated static func annexBNalRanges(in bytes: [UInt8]) -> [Range<Int>] {
+        var starts: [(startCodeIndex: Int, payloadIndex: Int)] = []
+        var index = 0
+
+        while index + 3 <= bytes.count {
+            if index + 3 <= bytes.count,
+               bytes[index] == 0,
+               bytes[index + 1] == 0,
+               bytes[index + 2] == 1 {
+                starts.append((index, index + 3))
+                index += 3
+            } else if index + 4 <= bytes.count,
+                      bytes[index] == 0,
+                      bytes[index + 1] == 0,
+                      bytes[index + 2] == 0,
+                      bytes[index + 3] == 1 {
+                starts.append((index, index + 4))
+                index += 4
+            } else {
+                index += 1
+            }
+        }
+
+        var ranges: [Range<Int>] = []
+        for startIndex in starts.indices {
+            let payloadStart = starts[startIndex].payloadIndex
+            let payloadEnd = startIndex + 1 < starts.count ? starts[startIndex + 1].startCodeIndex : bytes.count
+            if payloadStart < payloadEnd {
+                ranges.append(payloadStart..<payloadEnd)
+            }
+        }
+        return ranges
+    }
+
+    private nonisolated static func prefixHex(for bytes: [UInt8], maxBytes: Int) -> String? {
+        guard !bytes.isEmpty else {
+            return nil
+        }
+        return bytes.prefix(maxBytes)
+            .map { String(format: "%02X", $0) }
+            .joined(separator: " ")
     }
 
     private nonisolated static func runDiagnosticsLoop(owner: ALVRSessionDiagnosticsManager?) async {

@@ -569,9 +569,75 @@ struct ALVRDiagnosticsView: View {
                 Text("Trigger reason: \(decoderConfigSnapshot.triggerReason)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                Text("Decoder config NAL count: \(decoderConfigSnapshot.configNalUnitCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Decoder config codec guess: \(decoderConfigSnapshot.configCodecGuess)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Config HEVC VPS/SPS/PPS: \(decoderConfigSnapshot.hevcVpsCount)/\(decoderConfigSnapshot.hevcSpsCount)/\(decoderConfigSnapshot.hevcPpsCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Config H264 SPS/PPS: \(decoderConfigSnapshot.h264SpsCount)/\(decoderConfigSnapshot.h264PpsCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Config parameter sets ready: \(decoderConfigSnapshot.parameterSetsReady ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(decoderConfigSnapshot.parameterSetsReady ? .green : .orange)
+                Text("Config VideoToolbox ready: \(decoderConfigSnapshot.videoToolboxReady ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(decoderConfigSnapshot.videoToolboxReady ? .green : .orange)
+
+                if let hevcVpsSize = decoderConfigSnapshot.hevcVpsSize {
+                    Text("HEVC VPS size: \(hevcVpsSize)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let hevcSpsSize = decoderConfigSnapshot.hevcSpsSize {
+                    Text("HEVC SPS size: \(hevcSpsSize)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let hevcPpsSize = decoderConfigSnapshot.hevcPpsSize {
+                    Text("HEVC PPS size: \(hevcPpsSize)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let h264SpsSize = decoderConfigSnapshot.h264SpsSize {
+                    Text("H264 SPS size: \(h264SpsSize)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let h264PpsSize = decoderConfigSnapshot.h264PpsSize {
+                    Text("H264 PPS size: \(h264PpsSize)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !decoderConfigSnapshot.configNalTypes.isEmpty {
+                    Text("First config NAL types: " + decoderConfigSnapshot.configNalTypes.joined(separator: ", "))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !decoderConfigSnapshot.missingDecoderPrerequisites.isEmpty {
+                    Text("Config missing prerequisites: " + decoderConfigSnapshot.missingDecoderPrerequisites.joined(separator: ", "))
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
 
                 if let prefixHex = decoderConfigSnapshot.prefixHex {
                     Text("Decoder config prefix hex: \(prefixHex)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let parameterSetPrefixHex = decoderConfigSnapshot.parameterSetPrefixHex {
+                    Text("Parameter set prefix hex: \(parameterSetPrefixHex)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
