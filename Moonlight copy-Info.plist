@@ -62,9 +62,10 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_nvstream._tcp</string>
+		<string>_alvr._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Moonlight uses the local network to connect to your gaming PC for streaming.</string>
+	<string>This app uses the local network to discover and connect to Moonlight and ALVR / SteamVR streaming hosts.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
