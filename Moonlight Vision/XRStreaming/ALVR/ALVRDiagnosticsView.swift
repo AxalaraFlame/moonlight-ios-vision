@@ -540,8 +540,8 @@ struct ALVRDiagnosticsView: View {
             .buttonStyle(.bordered)
             .disabled(!sessionDiagnosticsManager.canReadDecoderConfigSnapshot)
 
-            if sessionDiagnosticsManager.isRunning && !sessionDiagnosticsManager.decoderConfigEventSeen {
-                Text("Decoder config event has not been seen yet. Reading decoder config now is disabled to avoid disrupting the ALVR session.")
+            if let disabledReason = sessionDiagnosticsManager.decoderConfigSnapshotDisabledReason {
+                Text(disabledReason)
                     .font(.caption2)
                     .foregroundStyle(.orange)
             }
@@ -710,6 +710,85 @@ struct ALVRDiagnosticsView: View {
                     Text(errorDescription)
                         .font(.caption2)
                         .foregroundStyle(.red)
+                }
+            }
+
+            Button("Feed Test Frames to HEVC Decoder") {
+                sessionDiagnosticsManager.feedTestFramesToHEVCDecoder()
+            }
+            .buttonStyle(.bordered)
+            .disabled(!sessionDiagnosticsManager.canFeedTestFramesToHEVCDecoder)
+
+            if let videoToolboxFrameFeedSummary = sessionDiagnosticsManager.videoToolboxFrameFeedSummary {
+                Label(
+                    videoToolboxFrameFeedSummary.decodedFrameCount > 0 ? "HEVC frame decode smoke test received CVPixelBuffer" : "HEVC frame decode smoke test waiting for frames",
+                    systemImage: videoToolboxFrameFeedSummary.decodedFrameCount > 0 ? "checkmark.circle.fill" : "clock"
+                )
+                .font(.caption)
+
+                Text("Frame feed enabled: \(videoToolboxFrameFeedSummary.feedEnabled ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Copied frames: \(videoToolboxFrameFeedSummary.copiedFrameCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Submitted frames: \(videoToolboxFrameFeedSummary.submittedFrameCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Decoded frames: \(videoToolboxFrameFeedSummary.decodedFrameCount)")
+                    .font(.caption2)
+                    .foregroundStyle(videoToolboxFrameFeedSummary.decodedFrameCount > 0 ? .green : .secondary)
+                Text("Did call alvr_report_frame_decoded: \(videoToolboxFrameFeedSummary.didCallAlvrReportFrameDecoded ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(videoToolboxFrameFeedSummary.didCallAlvrReportFrameDecoded ? .orange : .secondary)
+
+                if let lastDecodeCallStatus = videoToolboxFrameFeedSummary.lastDecodeCallStatus {
+                    Text("Last decode call status: \(lastDecodeCallStatus)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastCallbackStatus = videoToolboxFrameFeedSummary.lastCallbackStatus {
+                    Text("Last callback status: \(lastCallbackStatus)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastInfoFlagsRawValue = videoToolboxFrameFeedSummary.lastInfoFlagsRawValue {
+                    Text("Last info flags: \(lastInfoFlagsRawValue)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let width = videoToolboxFrameFeedSummary.lastPixelBufferWidth,
+                   let height = videoToolboxFrameFeedSummary.lastPixelBufferHeight {
+                    Text("Last pixel buffer: \(width)x\(height)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastPixelFormat = videoToolboxFrameFeedSummary.lastPixelFormat {
+                    Text("Last pixel format: \(lastPixelFormat)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastDecodedTimestampNs = videoToolboxFrameFeedSummary.lastDecodedTimestampNs {
+                    Text("Last decoded timestamp ns: \(lastDecodedTimestampNs)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !videoToolboxFrameFeedSummary.decodeErrors.isEmpty {
+                    Text("Decode errors: " + videoToolboxFrameFeedSummary.decodeErrors.joined(separator: ", "))
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+
+                ForEach(videoToolboxFrameFeedSummary.messages, id: \.self) { message in
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
 

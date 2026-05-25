@@ -202,7 +202,9 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastStep = "Idle"
     @Published private(set) var decoderConfigSnapshot: ALVRDecoderConfigSnapshot?
+    @Published private(set) var isReadingDecoderConfig = false
     @Published private(set) var videoToolboxDecoderCreationResult: ALVRVideoToolboxDecoderCreationResult?
+    @Published private(set) var videoToolboxFrameFeedSummary: ALVRVideoToolboxFrameFeedSummary?
 
     private var diagnosticsTask: Task<Void, Never>?
     private var didReadDecoderConfigSnapshot = false
@@ -265,6 +267,23 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
     }
 
     func readDecoderConfigSnapshot(triggerReason: String = "Manual snapshot") {
+        guard case .running = state else {
+            let message = requiresAppRestart
+                ? "Session diagnostics is not running. Restart the app before starting a new ALVR core test."
+                : "Session diagnostics is not running."
+            decoderConfigSnapshot = ALVRDecoderConfigSnapshot(
+                attempted: false,
+                success: false,
+                size: 0,
+                prefixHex: nil,
+                asciiPreview: nil,
+                errorDescription: message,
+                triggerReason: triggerReason,
+                messages: [message]
+            )
+            return
+        }
+
         guard decoderConfigEventSeen else {
             decoderConfigSnapshot = ALVRDecoderConfigSnapshot(
                 attempted: false,
@@ -282,19 +301,22 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
             return
         }
 
-        guard canReadDecoderConfigSnapshot else {
+        guard !isReadingDecoderConfig else {
             decoderConfigSnapshot = ALVRDecoderConfigSnapshot(
                 attempted: false,
                 success: false,
                 size: 0,
                 prefixHex: nil,
                 asciiPreview: nil,
-                errorDescription: "Start session diagnostics and wait for ALVR_EVENT_DECODER_CONFIG before reading decoder config.",
+                errorDescription: "Decoder config snapshot is already reading.",
                 triggerReason: triggerReason,
-                messages: ["Decoder config snapshot not attempted"]
+                messages: ["Decoder config snapshot is already reading."]
             )
             return
         }
+
+        isReadingDecoderConfig = true
+        defer { isReadingDecoderConfig = false }
 
         #if canImport(ALVRClientCore)
         decoderConfigSnapshot = Self.readDecoderConfigSnapshotFromCore(triggerReason: triggerReason)
@@ -349,7 +371,41 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         videoToolboxDecoderBridge?.invalidate()
         videoToolboxDecoderBridge = result.success ? bridge : nil
         videoToolboxDecoderCreationResult = result
+        videoToolboxFrameFeedSummary = bridge.frameFeedSummarySnapshot()
         messages.append(contentsOf: result.messages)
+    }
+
+    func feedTestFramesToHEVCDecoder() {
+        guard canFeedTestFramesToHEVCDecoder, let bridge = videoToolboxDecoderBridge else {
+            videoToolboxFrameFeedSummary = ALVRVideoToolboxFrameFeedSummary(
+                feedEnabled: false,
+                copiedFrameCount: 0,
+                submittedFrameCount: 0,
+                decodedFrameCount: 0,
+                lastDecodeCallStatus: nil,
+                lastCallbackStatus: nil,
+                lastInfoFlagsRawValue: nil,
+                lastPixelBufferWidth: nil,
+                lastPixelBufferHeight: nil,
+                lastPixelFormat: nil,
+                lastDecodedTimestampNs: nil,
+                decodeErrors: ["Create a HEVC decoder skeleton while session diagnostics are running before feeding test frames."],
+                didCallAlvrReportFrameDecoded: false,
+                messages: ["HEVC frame feed smoke test not attempted."]
+            )
+            return
+        }
+
+        bridge.resetFrameFeedSummary(feedEnabled: true)
+        videoToolboxFrameFeedSummary = bridge.frameFeedSummarySnapshot()
+        messages.append("Enabled HEVC frame feed smoke test. The decoder callback will copy at most 3 frames.")
+
+        #if canImport(ALVRClientCore)
+        alvrSessionDiagnosticsMetadataCollector.configureFrameFeedSink { [weak bridge] copiedFrame in
+            guard let bridge else { return }
+            _ = bridge.feedAnnexBHEVCFrame(copiedFrame.data, timestampNs: copiedFrame.timestampNs)
+        }
+        #endif
     }
 
     private func resetForStart() {
@@ -397,7 +453,12 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         errorMessage = nil
         lastStep = "Idle"
         decoderConfigSnapshot = nil
+        isReadingDecoderConfig = false
         videoToolboxDecoderCreationResult = nil
+        videoToolboxFrameFeedSummary = nil
+        #if canImport(ALVRClientCore)
+        alvrSessionDiagnosticsMetadataCollector.configureFrameFeedSink(nil)
+        #endif
         videoToolboxDecoderBridge?.invalidate()
         videoToolboxDecoderBridge = nil
         didReadDecoderConfigSnapshot = false
@@ -451,7 +512,26 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         guard case .running = state else {
             return false
         }
-        return !requiresAppRestart && !didReadDecoderConfigSnapshot && decoderConfigEventSeen
+        return decoderConfigEventSeen && !isReadingDecoderConfig
+    }
+
+    var decoderConfigSnapshotDisabledReason: String? {
+        if canReadDecoderConfigSnapshot {
+            return nil
+        }
+        if isReadingDecoderConfig {
+            return "Decoder config snapshot is already reading"
+        }
+        guard case .running = state else {
+            if requiresAppRestart {
+                return "Session diagnostics is not running. Restart required before starting a new ALVR core test"
+            }
+            return "Session diagnostics is not running"
+        }
+        if !decoderConfigEventSeen {
+            return "Decoder config event has not been seen yet"
+        }
+        return nil
     }
 
     var canCreateHEVCDecoderSkeleton: Bool {
@@ -468,6 +548,15 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
             && !decoderConfigSnapshot.hevcVpsData.isEmpty
             && !decoderConfigSnapshot.hevcSpsData.isEmpty
             && !decoderConfigSnapshot.hevcPpsData.isEmpty
+    }
+
+    var canFeedTestFramesToHEVCDecoder: Bool {
+        guard case .running = state else {
+            return false
+        }
+        return !requiresAppRestart
+            && videoToolboxDecoderCreationResult?.success == true
+            && videoToolboxFrameFeedSummary?.feedEnabled != true
     }
 
     #if canImport(ALVRClientCore)
@@ -782,6 +871,7 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
                 owner.decoderConfigEventSeen = decoderConfigEventSeen
                 owner.hapticsEventSeen = hapticsEventSeen
                 owner.applySnapshot(snapshot)
+                owner.videoToolboxFrameFeedSummary = owner.videoToolboxDecoderBridge?.frameFeedSummarySnapshot()
             }
         }
 
@@ -880,6 +970,7 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         }
 
         alvrSessionDiagnosticsMetadataCollector.stop()
+        alvrSessionDiagnosticsMetadataCollector.configureFrameFeedSink(nil)
         await refreshUi(force: true)
         await record("Skipped alvr_destroy() after resume. Restart the app before running another ALVR core test.")
 

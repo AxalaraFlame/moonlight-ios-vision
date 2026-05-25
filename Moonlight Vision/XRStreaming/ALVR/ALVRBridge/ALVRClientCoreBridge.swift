@@ -147,6 +147,12 @@ struct ALVRDecoderMetadataScanResult: Sendable {
 }
 
 #if canImport(ALVRClientCore)
+struct ALVRDecoderCopiedFrame: Sendable {
+    let data: Data
+    let timestampNs: UInt64
+    let containsIDR: Bool
+}
+
 final class ALVRDecoderMetadataCollector: @unchecked Sendable {
     private struct NalScanResult {
         var nalUnitCount = 0
@@ -191,6 +197,11 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
     private var seiCount = 0
     private var firstNalTypes: [String] = []
     private var messages: [String] = []
+    private var frameFeedSink: ((ALVRDecoderCopiedFrame) -> Void)?
+    private var frameFeedCopiedCount = 0
+    private var frameFeedInspectedCount = 0
+    private let frameFeedMaxFrames = 3
+    private let frameFeedMaxFrameSize: UInt64 = 2 * 1024 * 1024
 
     func reset() {
         lock.lock()
@@ -220,6 +231,9 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
         seiCount = 0
         firstNalTypes = []
         messages = []
+        frameFeedSink = nil
+        frameFeedCopiedCount = 0
+        frameFeedInspectedCount = 0
     }
 
     func start() {
@@ -235,7 +249,22 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
         defer { lock.unlock() }
 
         isActive = false
+        frameFeedSink = nil
         messages.append("Decoder metadata collector stopped")
+    }
+
+    func configureFrameFeedSink(_ sink: ((ALVRDecoderCopiedFrame) -> Void)?) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        frameFeedSink = sink
+        frameFeedCopiedCount = 0
+        frameFeedInspectedCount = 0
+        if sink == nil {
+            messages.append("HEVC frame feed smoke test disabled")
+        } else {
+            messages.append("HEVC frame feed smoke test enabled; will copy at most 3 frames")
+        }
     }
 
     func record(frameData: AlvrVideoFrameData) {
@@ -243,11 +272,13 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
         let timestamp = frameData.timestamp_ns
         let prefixHex = Self.prefixHex(bufferPointer: frameData.buffer_ptr, bufferSize: bufferSize)
         let nalScanResult = Self.scanNalUnits(bufferPointer: frameData.buffer_ptr, bufferSize: bufferSize)
+        var frameFeedSinkToCall: ((ALVRDecoderCopiedFrame) -> Void)?
+        var shouldCopyFrameForFeed = false
+        let containsIDR = nalScanResult.hevcIdrCount > 0 || nalScanResult.hevcCraCount > 0 || nalScanResult.h264IdrCount > 0
 
         lock.lock()
-        defer { lock.unlock() }
-
         guard isActive else {
+            lock.unlock()
             return
         }
 
@@ -284,6 +315,35 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
             messages.append("Received zero-byte decoder frame at \(timestamp)")
         } else if frameData.buffer_ptr == nil {
             messages.append("Received decoder frame with nil buffer at \(timestamp)")
+        }
+
+        if let frameFeedSink,
+           frameFeedCopiedCount < frameFeedMaxFrames,
+           frameData.buffer_ptr != nil,
+           bufferSize > 0,
+           bufferSize <= frameFeedMaxFrameSize {
+            frameFeedInspectedCount += 1
+            let shouldPreferIDR = containsIDR
+            let shouldFallbackAfterWarmup = frameFeedInspectedCount > 30 || frameFeedCopiedCount > 0
+            if shouldPreferIDR || shouldFallbackAfterWarmup {
+                frameFeedCopiedCount += 1
+                shouldCopyFrameForFeed = true
+                frameFeedSinkToCall = frameFeedSink
+                messages.append("Copying HEVC frame \(frameFeedCopiedCount) for VideoToolbox feed smoke test at \(timestamp)")
+            }
+        }
+        lock.unlock()
+
+        if shouldCopyFrameForFeed,
+           let frameFeedSinkToCall,
+           let bufferPointer = frameData.buffer_ptr,
+           bufferSize <= frameFeedMaxFrameSize {
+            let data = Data(bytes: bufferPointer, count: Int(bufferSize))
+            frameFeedSinkToCall(ALVRDecoderCopiedFrame(
+                data: data,
+                timestampNs: timestamp,
+                containsIDR: containsIDR
+            ))
         }
     }
 
