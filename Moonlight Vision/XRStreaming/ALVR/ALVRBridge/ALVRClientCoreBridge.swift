@@ -29,11 +29,30 @@ struct LifecycleSmokeResult {
     let errorDescription: String?
 }
 
+struct ControlledResumeSmokeResult: Sendable {
+    let success: Bool
+    let messages: [String]
+    let didInitialize: Bool
+    let didResume: Bool
+    let didPause: Bool
+    let didDestroy: Bool
+    let destroySkipped: Bool
+    let requiresAppRestart: Bool
+    let polledEventCount: Int
+    let eventTagRawValues: [UInt32]
+    let eventTagNames: [String]
+    let dangerousEventSeen: Bool
+    let errorDescription: String?
+    let durationMilliseconds: Int
+    let lastStep: String
+}
+
 @MainActor
 final class ALVRClientCoreBridge {
     static let shared = ALVRClientCoreBridge()
 
     private var isLifecycleSmokeTestRunning = false
+    private var isControlledResumeSmokeTestRunning = false
 
     var isFrameworkAvailable: Bool {
         #if canImport(ALVRClientCore)
@@ -182,6 +201,172 @@ final class ALVRClientCoreBridge {
         #endif
     }
 
+    func runControlledResumeSmokeTest(durationMilliseconds: Int = 1500) async -> ControlledResumeSmokeResult {
+        guard !isControlledResumeSmokeTestRunning else {
+            return ControlledResumeSmokeResult(
+                success: false,
+                messages: ["Controlled resume smoke test already running"],
+                didInitialize: false,
+                didResume: false,
+                didPause: false,
+                didDestroy: false,
+                destroySkipped: false,
+                requiresAppRestart: false,
+                polledEventCount: 0,
+                eventTagRawValues: [],
+                eventTagNames: [],
+                dangerousEventSeen: false,
+                errorDescription: "Controlled resume smoke test already running.",
+                durationMilliseconds: 0,
+                lastStep: "Already running"
+            )
+        }
+
+        isControlledResumeSmokeTestRunning = true
+        defer { isControlledResumeSmokeTestRunning = false }
+
+        #if canImport(ALVRClientCore)
+        let cappedDurationMilliseconds = min(max(durationMilliseconds, 100), 3000)
+        return await Task.detached(priority: .userInitiated) {
+            await Self.performControlledResumeSmokeTest(durationMilliseconds: cappedDurationMilliseconds)
+        }.value
+        #else
+        return ControlledResumeSmokeResult(
+            success: false,
+            messages: ["ALVRClientCore import unavailable"],
+            didInitialize: false,
+            didResume: false,
+            didPause: false,
+            didDestroy: false,
+            destroySkipped: false,
+            requiresAppRestart: false,
+            polledEventCount: 0,
+            eventTagRawValues: [],
+            eventTagNames: [],
+            dangerousEventSeen: false,
+            errorDescription: "ALVRClientCore is not available to this target.",
+            durationMilliseconds: 0,
+            lastStep: "ALVRClientCore unavailable"
+        )
+        #endif
+    }
+
+    #if canImport(ALVRClientCore)
+    private nonisolated static func performControlledResumeSmokeTest(durationMilliseconds: Int) async -> ControlledResumeSmokeResult {
+        var messages = ["ALVRClientCore import available"]
+        var didInitialize = false
+        var didResume = false
+        var didPause = false
+        let didDestroy = false
+        let destroySkipped = true
+        let requiresAppRestart = true
+        var eventTagRawValues: [UInt32] = []
+        var eventTagNames: [String] = []
+        var dangerousEventSeen = false
+        var lastStep = "Not started"
+        let startDate = Date()
+        let deadline = Date().addingTimeInterval(Double(durationMilliseconds) / 1000.0)
+
+        func record(_ message: String) {
+            lastStep = message
+            messages.append(message)
+            print("[ALVR Controlled Resume Smoke] \(message)")
+        }
+
+        defer {
+            if didResume && !didPause {
+                record("Calling alvr_pause")
+                alvr_pause()
+                didPause = true
+                record("Called alvr_pause() from cleanup")
+            }
+        }
+
+        let refreshRates: [Float] = [90]
+        refreshRates.withUnsafeBufferPointer { refreshRatesPointer in
+            let capabilities = AlvrClientCapabilities(
+                default_view_width: 1920,
+                default_view_height: 1920,
+                refresh_rates: refreshRatesPointer.baseAddress,
+                refresh_rates_count: 1,
+                foveated_encoding: false,
+                encoder_high_profile: true,
+                encoder_10_bits: false,
+                encoder_av1: false,
+                prefer_10bit: false,
+                prefer_full_range: true,
+                preferred_encoding_gamma: 1.0,
+                prefer_hdr: false
+            )
+
+            record("Calling alvr_initialize")
+            alvr_initialize(capabilities)
+            didInitialize = true
+            record("Called alvr_initialize(capabilities)")
+        }
+
+        record("Calling alvr_initialize_logging")
+        alvr_initialize_logging()
+        record("Called alvr_initialize_logging()")
+
+        record("Calling alvr_resume")
+        alvr_resume()
+        didResume = true
+        record("Called alvr_resume()")
+
+        record("Entering limited poll loop for \(durationMilliseconds) ms")
+        while Date() < deadline {
+            var event = AlvrEvent()
+            if alvr_poll_event(&event) {
+                let rawValue = UInt32(event.tag)
+                let tagName = Self.eventTagName(for: rawValue)
+
+                eventTagRawValues.append(rawValue)
+                eventTagNames.append(tagName)
+                record("Polled event tag: \(tagName) (\(rawValue))")
+
+                if Self.isDangerousEventTag(rawValue) {
+                    dangerousEventSeen = true
+                    record("Dangerous event seen; decoder/renderer not attached. Stopped polling early.")
+                    break
+                }
+            }
+
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        record("Leaving poll loop")
+
+        if eventTagRawValues.isEmpty {
+            record("No ALVR events observed during controlled resume window")
+        }
+
+        record("Calling alvr_pause")
+        alvr_pause()
+        didPause = true
+        record("Called alvr_pause()")
+
+        record("Skipped alvr_destroy() after resume because previous attempt blocked after alvr_pause(). Restart the app before running another ALVR core test.")
+
+        return ControlledResumeSmokeResult(
+            success: didInitialize && didResume && didPause,
+            messages: messages,
+            didInitialize: didInitialize,
+            didResume: didResume,
+            didPause: didPause,
+            didDestroy: didDestroy,
+            destroySkipped: destroySkipped,
+            requiresAppRestart: requiresAppRestart,
+            polledEventCount: eventTagRawValues.count,
+            eventTagRawValues: eventTagRawValues,
+            eventTagNames: eventTagNames,
+            dangerousEventSeen: dangerousEventSeen,
+            errorDescription: nil,
+            durationMilliseconds: Int(Date().timeIntervalSince(startDate) * 1000),
+            lastStep: lastStep
+        )
+    }
+    #endif
+
     func initializePlaceholder() {
         // TODO: Bridge alvr_initialize once the framework is linked and symbols are verified.
     }
@@ -205,4 +390,31 @@ final class ALVRClientCoreBridge {
     // TODO: Bridge alvr_poll_event.
     // TODO: Bridge alvr_send_tracking_and_face_data.
     // TODO: Bridge alvr_send_views_config.
+
+    #if canImport(ALVRClientCore)
+    private nonisolated static func eventTagName(for rawValue: UInt32) -> String {
+        switch rawValue {
+        case UInt32(ALVR_EVENT_HUD_MESSAGE_UPDATED.rawValue):
+            return "ALVR_EVENT_HUD_MESSAGE_UPDATED"
+        case UInt32(ALVR_EVENT_STREAMING_STARTED.rawValue):
+            return "ALVR_EVENT_STREAMING_STARTED"
+        case UInt32(ALVR_EVENT_STREAMING_STOPPED.rawValue):
+            return "ALVR_EVENT_STREAMING_STOPPED"
+        case UInt32(ALVR_EVENT_HAPTICS.rawValue):
+            return "ALVR_EVENT_HAPTICS"
+        case UInt32(ALVR_EVENT_DECODER_CONFIG.rawValue):
+            return "ALVR_EVENT_DECODER_CONFIG"
+        case UInt32(ALVR_EVENT_REAL_TIME_CONFIG.rawValue):
+            return "ALVR_EVENT_REAL_TIME_CONFIG"
+        default:
+            return "UNKNOWN_EVENT_TAG"
+        }
+    }
+
+    private nonisolated static func isDangerousEventTag(_ rawValue: UInt32) -> Bool {
+        rawValue == UInt32(ALVR_EVENT_STREAMING_STARTED.rawValue)
+            || rawValue == UInt32(ALVR_EVENT_DECODER_CONFIG.rawValue)
+            || rawValue == UInt32(ALVR_EVENT_HAPTICS.rawValue)
+    }
+    #endif
 }

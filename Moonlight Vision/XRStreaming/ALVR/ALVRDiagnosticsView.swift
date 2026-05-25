@@ -12,6 +12,8 @@ struct ALVRDiagnosticsView: View {
     @ObservedObject private var sessionManager = ALVRSessionManager.shared
     @State private var symbolSmokeResult: SymbolSmokeResult?
     @State private var lifecycleSmokeResult: LifecycleSmokeResult?
+    @State private var controlledResumeSmokeResult: ControlledResumeSmokeResult?
+    @State private var isControlledResumeSmokeTestRunning = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -37,6 +39,7 @@ struct ALVRDiagnosticsView: View {
                 symbolSmokeResult = ALVRClientCoreBridge.shared.runSymbolSmokeTest()
             }
             .buttonStyle(.bordered)
+            .disabled(coreTestsRequireRestart)
 
             if let symbolSmokeResult {
                 Label(
@@ -68,6 +71,7 @@ struct ALVRDiagnosticsView: View {
                 lifecycleSmokeResult = ALVRClientCoreBridge.shared.runLifecycleSmokeTest()
             }
             .buttonStyle(.bordered)
+            .disabled(coreTestsRequireRestart)
 
             if let lifecycleSmokeResult {
                 Label(
@@ -106,11 +110,97 @@ struct ALVRDiagnosticsView: View {
                         .foregroundStyle(.red)
                 }
             }
+
+            Button(isControlledResumeSmokeTestRunning ? "Running Controlled Resume/Pause Smoke Test..." : "Run Controlled Resume/Pause Smoke Test") {
+                isControlledResumeSmokeTestRunning = true
+                controlledResumeSmokeResult = nil
+
+                Task {
+                    controlledResumeSmokeResult = await ALVRClientCoreBridge.shared.runControlledResumeSmokeTest()
+                    isControlledResumeSmokeTestRunning = false
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(isControlledResumeSmokeTestRunning || coreTestsRequireRestart)
+
+            if let controlledResumeSmokeResult {
+                Label(
+                    controlledResumeSmokeResult.success ? "Controlled resume/pause smoke test passed" : "Controlled resume/pause smoke test failed",
+                    systemImage: controlledResumeSmokeResult.success ? "checkmark.circle.fill" : "xmark.octagon.fill"
+                )
+                .font(.caption)
+
+                Text("Initialized: \(controlledResumeSmokeResult.didInitialize ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Resumed: \(controlledResumeSmokeResult.didResume ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Paused: \(controlledResumeSmokeResult.didPause ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Destroyed: \(controlledResumeSmokeResult.didDestroy ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Destroy skipped: \(controlledResumeSmokeResult.destroySkipped ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(controlledResumeSmokeResult.destroySkipped ? .orange : .secondary)
+                Text("Requires app restart: \(controlledResumeSmokeResult.requiresAppRestart ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(controlledResumeSmokeResult.requiresAppRestart ? .orange : .secondary)
+                Text("Polled events: \(controlledResumeSmokeResult.polledEventCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Duration: \(controlledResumeSmokeResult.durationMilliseconds) ms")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Last step: \(controlledResumeSmokeResult.lastStep)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Dangerous event seen: \(controlledResumeSmokeResult.dangerousEventSeen ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(controlledResumeSmokeResult.dangerousEventSeen ? .orange : .secondary)
+
+                if controlledResumeSmokeResult.requiresAppRestart {
+                    Label("Restart the app before running another ALVR core test.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                if !controlledResumeSmokeResult.eventTagNames.isEmpty {
+                    Text("Event tags: " + controlledResumeSmokeResult.eventTagNames.joined(separator: ", "))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !controlledResumeSmokeResult.eventTagRawValues.isEmpty {
+                    let rawValues = controlledResumeSmokeResult.eventTagRawValues.map(String.init).joined(separator: ", ")
+                    Text("Event raw values: " + rawValues)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(controlledResumeSmokeResult.messages, id: \.self) { message in
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorDescription = controlledResumeSmokeResult.errorDescription {
+                    Text(errorDescription)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         // TODO: Migrate ALVR transport, pose input, and controller input diagnostics from alvr-org/alvr-visionos.
+    }
+
+    private var coreTestsRequireRestart: Bool {
+        controlledResumeSmokeResult?.requiresAppRestart == true
     }
 
     private var statusText: String {
