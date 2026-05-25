@@ -7,6 +7,17 @@
 
 import Foundation
 
+struct ALVRDecoderConfigSnapshot: Sendable {
+    let attempted: Bool
+    let success: Bool
+    let size: UInt64
+    let prefixHex: String?
+    let asciiPreview: String?
+    let errorDescription: String?
+    let triggerReason: String
+    let messages: [String]
+}
+
 #if canImport(ALVRClientCore)
 import ALVRClientCore
 
@@ -65,8 +76,10 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
     @Published private(set) var messages: [String] = []
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastStep = "Idle"
+    @Published private(set) var decoderConfigSnapshot: ALVRDecoderConfigSnapshot?
 
     private var diagnosticsTask: Task<Void, Never>?
+    private var didReadDecoderConfigSnapshot = false
 
     var isRunning: Bool {
         if case .running = state { return true }
@@ -124,6 +137,58 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         diagnosticsTask?.cancel()
     }
 
+    func readDecoderConfigSnapshot(triggerReason: String = "Manual snapshot") {
+        guard decoderConfigEventSeen else {
+            decoderConfigSnapshot = ALVRDecoderConfigSnapshot(
+                attempted: false,
+                success: false,
+                size: 0,
+                prefixHex: nil,
+                asciiPreview: nil,
+                errorDescription: "Decoder config unavailable.",
+                triggerReason: triggerReason,
+                messages: [
+                    "Decoder config event has not been seen yet.",
+                    "Reading decoder config now is disabled to avoid disrupting the ALVR session."
+                ]
+            )
+            return
+        }
+
+        guard canReadDecoderConfigSnapshot else {
+            decoderConfigSnapshot = ALVRDecoderConfigSnapshot(
+                attempted: false,
+                success: false,
+                size: 0,
+                prefixHex: nil,
+                asciiPreview: nil,
+                errorDescription: "Start session diagnostics and wait for ALVR_EVENT_DECODER_CONFIG before reading decoder config.",
+                triggerReason: triggerReason,
+                messages: ["Decoder config snapshot not attempted"]
+            )
+            return
+        }
+
+        #if canImport(ALVRClientCore)
+        decoderConfigSnapshot = Self.readDecoderConfigSnapshotFromCore(triggerReason: triggerReason)
+        didReadDecoderConfigSnapshot = true
+        if let decoderConfigSnapshot {
+            messages.append(contentsOf: decoderConfigSnapshot.messages)
+        }
+        #else
+        decoderConfigSnapshot = ALVRDecoderConfigSnapshot(
+            attempted: true,
+            success: false,
+            size: 0,
+            prefixHex: nil,
+            asciiPreview: nil,
+            errorDescription: "ALVRClientCore is not available to this target.",
+            triggerReason: triggerReason,
+            messages: ["ALVRClientCore import unavailable"]
+        )
+        #endif
+    }
+
     private func resetForStart() {
         diagnosticsTask?.cancel()
         diagnosticsTask = nil
@@ -146,6 +211,8 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         messages = []
         errorMessage = nil
         lastStep = "Idle"
+        decoderConfigSnapshot = nil
+        didReadDecoderConfigSnapshot = false
     }
 
     private func record(_ message: String) {
@@ -170,7 +237,78 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         lastFramePrefixHex = snapshot.lastFramePrefixHex
     }
 
+    var canReadDecoderConfigSnapshot: Bool {
+        guard case .running = state else {
+            return false
+        }
+        return !requiresAppRestart && !didReadDecoderConfigSnapshot && decoderConfigEventSeen
+    }
+
     #if canImport(ALVRClientCore)
+    private nonisolated static func readDecoderConfigSnapshotFromCore(triggerReason: String) -> ALVRDecoderConfigSnapshot {
+        let safetyLimit = 2 * 1024 * 1024
+        var messages = ["Calling alvr_get_decoder_config(nil)"]
+        let requestedSize = alvr_get_decoder_config(nil)
+        messages.append("alvr_get_decoder_config(nil) returned \(requestedSize) bytes")
+
+        guard requestedSize > 0 else {
+            return ALVRDecoderConfigSnapshot(
+                attempted: true,
+                success: false,
+                size: 0,
+                prefixHex: nil,
+                asciiPreview: nil,
+                errorDescription: "Decoder config is empty.",
+                triggerReason: triggerReason,
+                messages: messages
+            )
+        }
+
+        guard requestedSize <= UInt64(safetyLimit) else {
+            return ALVRDecoderConfigSnapshot(
+                attempted: true,
+                success: false,
+                size: requestedSize,
+                prefixHex: nil,
+                asciiPreview: nil,
+                errorDescription: "Decoder config size exceeds \(safetyLimit) byte safety limit.",
+                triggerReason: triggerReason,
+                messages: messages
+            )
+        }
+
+        var buffer = [CChar](repeating: 0, count: Int(requestedSize))
+        let returnedSize = buffer.withUnsafeMutableBufferPointer { bufferPointer in
+            alvr_get_decoder_config(bufferPointer.baseAddress)
+        }
+        messages.append("alvr_get_decoder_config(buffer) returned \(returnedSize) bytes")
+
+        let bytes = buffer.map { UInt8(bitPattern: $0) }
+        let prefixBytes = bytes.prefix(64)
+        let prefixHex = prefixBytes
+            .map { String(format: "%02X", $0) }
+            .joined(separator: " ")
+        let asciiPreview = prefixBytes
+            .map { byte -> String in
+                if byte >= 32 && byte <= 126 {
+                    return String(UnicodeScalar(Int(byte))!)
+                }
+                return "."
+            }
+            .joined()
+
+        return ALVRDecoderConfigSnapshot(
+            attempted: true,
+            success: true,
+            size: requestedSize,
+            prefixHex: prefixHex.isEmpty ? nil : prefixHex,
+            asciiPreview: asciiPreview.isEmpty ? nil : asciiPreview,
+            errorDescription: nil,
+            triggerReason: triggerReason,
+            messages: messages
+        )
+    }
+
     private nonisolated static func runDiagnosticsLoop(owner: ALVRSessionDiagnosticsManager?) async {
         guard let owner else {
             return

@@ -436,6 +436,69 @@ struct ALVRDiagnosticsView: View {
                 }
             }
 
+            Button("Read Decoder Config Snapshot") {
+                sessionDiagnosticsManager.readDecoderConfigSnapshot(
+                    triggerReason: sessionDiagnosticsSnapshotTriggerReason
+                )
+            }
+            .buttonStyle(.bordered)
+            .disabled(!sessionDiagnosticsManager.canReadDecoderConfigSnapshot)
+
+            if sessionDiagnosticsManager.isRunning && !sessionDiagnosticsManager.decoderConfigEventSeen {
+                Text("Decoder config event has not been seen yet. Reading decoder config now is disabled to avoid disrupting the ALVR session.")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+
+            Text("Frame data may arrive before this diagnostics tool sees DECODER_CONFIG. In that case, use NAL scan instead of alvr_get_decoder_config.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            if let decoderConfigSnapshot = sessionDiagnosticsManager.decoderConfigSnapshot {
+                Label(
+                    decoderConfigSnapshot.success ? "Decoder config snapshot read" : "Decoder config snapshot unavailable",
+                    systemImage: decoderConfigSnapshot.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+
+                Text("Decoder config attempted: \(decoderConfigSnapshot.attempted ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Decoder config success: \(decoderConfigSnapshot.success ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(decoderConfigSnapshot.success ? .green : .orange)
+                Text("Decoder config size: \(decoderConfigSnapshot.size)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Trigger reason: \(decoderConfigSnapshot.triggerReason)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                if let prefixHex = decoderConfigSnapshot.prefixHex {
+                    Text("Decoder config prefix hex: \(prefixHex)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let asciiPreview = decoderConfigSnapshot.asciiPreview {
+                    Text("Decoder config ASCII preview: \(asciiPreview)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(decoderConfigSnapshot.messages, id: \.self) { message in
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorDescription = decoderConfigSnapshot.errorDescription {
+                    Text(errorDescription)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
+            }
+
             if sessionDiagnosticsManager.requiresAppRestart {
                 Label("Restart the app before running another ALVR core test.", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
@@ -637,6 +700,13 @@ struct ALVRDiagnosticsView: View {
         controlledResumeSmokeResult?.requiresAppRestart == true
             || decoderMetadataScanResult?.requiresAppRestart == true
             || sessionDiagnosticsManager.requiresAppRestart
+    }
+
+    private var sessionDiagnosticsSnapshotTriggerReason: String {
+        if sessionDiagnosticsManager.decoderConfigEventSeen {
+            return "decoderConfigEventSeen"
+        }
+        return "Manual snapshot"
     }
 
     private func decoderMetadataStatusText(for result: ALVRDecoderMetadataScanResult) -> String {
