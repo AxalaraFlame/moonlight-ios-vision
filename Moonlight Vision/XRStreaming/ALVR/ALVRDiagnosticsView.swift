@@ -180,6 +180,18 @@ struct ALVRDiagnosticsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                if !controlledResumeSmokeResult.hudMessages.isEmpty {
+                    Text("HUD messages:")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(controlledResumeSmokeResult.hudMessages, id: \.self) { hudMessage in
+                        Text(hudMessage)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 ForEach(controlledResumeSmokeResult.messages, id: \.self) { message in
                     Text(message)
                         .font(.caption2)

@@ -41,6 +41,7 @@ struct ControlledResumeSmokeResult: Sendable {
     let polledEventCount: Int
     let eventTagRawValues: [UInt32]
     let eventTagNames: [String]
+    let hudMessages: [String]
     let dangerousEventSeen: Bool
     let errorDescription: String?
     let durationMilliseconds: Int
@@ -215,6 +216,7 @@ final class ALVRClientCoreBridge {
                 polledEventCount: 0,
                 eventTagRawValues: [],
                 eventTagNames: [],
+                hudMessages: [],
                 dangerousEventSeen: false,
                 errorDescription: "Controlled resume smoke test already running.",
                 durationMilliseconds: 0,
@@ -243,6 +245,7 @@ final class ALVRClientCoreBridge {
             polledEventCount: 0,
             eventTagRawValues: [],
             eventTagNames: [],
+            hudMessages: [],
             dangerousEventSeen: false,
             errorDescription: "ALVRClientCore is not available to this target.",
             durationMilliseconds: 0,
@@ -262,6 +265,7 @@ final class ALVRClientCoreBridge {
         let requiresAppRestart = true
         var eventTagRawValues: [UInt32] = []
         var eventTagNames: [String] = []
+        var hudMessages: [String] = []
         var dangerousEventSeen = false
         var lastStep = "Not started"
         let startDate = Date()
@@ -325,6 +329,15 @@ final class ALVRClientCoreBridge {
                 eventTagNames.append(tagName)
                 record("Polled event tag: \(tagName) (\(rawValue))")
 
+                if rawValue == UInt32(ALVR_EVENT_HUD_MESSAGE_UPDATED.rawValue) {
+                    let hudReadResult = Self.readHudMessage()
+                    hudMessages.append(hudReadResult.message)
+                    record("Read HUD message: \(hudReadResult.message)")
+                    if hudReadResult.wasTruncated {
+                        record("HUD message may be truncated; alvr_hud_message returned \(hudReadResult.returnedLength) bytes for \(hudReadResult.bufferSize)-byte buffer")
+                    }
+                }
+
                 if Self.isDangerousEventTag(rawValue) {
                     dangerousEventSeen = true
                     record("Dangerous event seen; decoder/renderer not attached. Stopped polling early.")
@@ -359,6 +372,7 @@ final class ALVRClientCoreBridge {
             polledEventCount: eventTagRawValues.count,
             eventTagRawValues: eventTagRawValues,
             eventTagNames: eventTagNames,
+            hudMessages: hudMessages,
             dangerousEventSeen: dangerousEventSeen,
             errorDescription: nil,
             durationMilliseconds: Int(Date().timeIntervalSince(startDate) * 1000),
@@ -415,6 +429,26 @@ final class ALVRClientCoreBridge {
         rawValue == UInt32(ALVR_EVENT_STREAMING_STARTED.rawValue)
             || rawValue == UInt32(ALVR_EVENT_DECODER_CONFIG.rawValue)
             || rawValue == UInt32(ALVR_EVENT_HAPTICS.rawValue)
+    }
+
+    private nonisolated static func readHudMessage() -> (message: String, returnedLength: UInt64, bufferSize: Int, wasTruncated: Bool) {
+        let bufferSize = 4096
+        var buffer = [CChar](repeating: 0, count: bufferSize)
+        let returnedLength = buffer.withUnsafeMutableBufferPointer { bufferPointer in
+            alvr_hud_message(bufferPointer.baseAddress)
+        }
+
+        buffer[bufferSize - 1] = 0
+        let message = buffer.withUnsafeBufferPointer { bufferPointer in
+            String(cString: bufferPointer.baseAddress!)
+        }
+
+        return (
+            message: message,
+            returnedLength: returnedLength,
+            bufferSize: bufferSize,
+            wasTruncated: returnedLength >= UInt64(bufferSize)
+        )
     }
     #endif
 }
