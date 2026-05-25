@@ -10,6 +10,7 @@ import SwiftUI
 struct ALVRDiagnosticsView: View {
     @EnvironmentObject private var viewModel: MainViewModel
     @ObservedObject private var sessionManager = ALVRSessionManager.shared
+    @StateObject private var mdnsBroadcaster = ALVRMdnsBroadcaster()
     @State private var symbolSmokeResult: SymbolSmokeResult?
     @State private var lifecycleSmokeResult: LifecycleSmokeResult?
     @State private var controlledResumeSmokeResult: ControlledResumeSmokeResult?
@@ -106,6 +107,73 @@ struct ALVRDiagnosticsView: View {
                         .font(.caption2)
                         .foregroundStyle(.red)
                 }
+            }
+
+            HStack {
+                Button("Start ALVR mDNS Broadcast") {
+                    guard let clientInfoResult else { return }
+                    Task { await mdnsBroadcaster.start(clientInfo: clientInfoResult) }
+                }
+                .buttonStyle(.bordered)
+                .disabled(clientInfoResult?.success != true || mdnsBroadcaster.isBroadcasting)
+
+                Button("Stop ALVR mDNS Broadcast") {
+                    mdnsBroadcaster.stop()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!mdnsBroadcaster.isBroadcasting)
+            }
+
+            Text("Broadcast state: \(mdnsBroadcaster.state.description)")
+                .font(.caption2)
+                .foregroundStyle(mdnsBroadcaster.isBroadcasting ? .green : .secondary)
+
+            if clientInfoResult?.success != true {
+                Text("Load ALVR Client Info before starting mDNS broadcast.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !mdnsBroadcaster.serviceName.isEmpty {
+                Text("Service name: \(mdnsBroadcaster.serviceName)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !mdnsBroadcaster.serviceType.isEmpty {
+                Text("Service type: \(mdnsBroadcaster.serviceType)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !mdnsBroadcaster.deviceId.isEmpty {
+                Text("Device ID: \(mdnsBroadcaster.deviceId)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !mdnsBroadcaster.protocolId.isEmpty {
+                Text("Protocol ID: \(mdnsBroadcaster.protocolId)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !mdnsBroadcaster.portDescription.isEmpty {
+                Text("Port: \(mdnsBroadcaster.portDescription)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !mdnsBroadcaster.txtRecordDescription.isEmpty {
+                Text("TXT record: \(mdnsBroadcaster.txtRecordDescription)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let lastError = mdnsBroadcaster.lastError {
+                Text(lastError)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
             }
 
             Divider()
