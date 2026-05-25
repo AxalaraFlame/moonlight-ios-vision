@@ -26,6 +26,9 @@ struct ALVRDecoderConfigSnapshot: Sendable {
     let hevcVpsSize: Int?
     let hevcSpsSize: Int?
     let hevcPpsSize: Int?
+    let hevcVpsData: [UInt8]
+    let hevcSpsData: [UInt8]
+    let hevcPpsData: [UInt8]
     let h264SpsSize: Int?
     let h264PpsSize: Int?
     let parameterSetPrefixHex: String?
@@ -53,6 +56,9 @@ struct ALVRDecoderConfigSnapshot: Sendable {
         hevcVpsSize: Int? = nil,
         hevcSpsSize: Int? = nil,
         hevcPpsSize: Int? = nil,
+        hevcVpsData: [UInt8] = [],
+        hevcSpsData: [UInt8] = [],
+        hevcPpsData: [UInt8] = [],
         h264SpsSize: Int? = nil,
         h264PpsSize: Int? = nil,
         parameterSetPrefixHex: String? = nil,
@@ -79,6 +85,9 @@ struct ALVRDecoderConfigSnapshot: Sendable {
         self.hevcVpsSize = hevcVpsSize
         self.hevcSpsSize = hevcSpsSize
         self.hevcPpsSize = hevcPpsSize
+        self.hevcVpsData = hevcVpsData
+        self.hevcSpsData = hevcSpsData
+        self.hevcPpsData = hevcPpsData
         self.h264SpsSize = h264SpsSize
         self.h264PpsSize = h264PpsSize
         self.parameterSetPrefixHex = parameterSetPrefixHex
@@ -103,6 +112,9 @@ private struct ALVRDecoderConfigParseResult {
     var hevcVpsSize: Int?
     var hevcSpsSize: Int?
     var hevcPpsSize: Int?
+    var hevcVpsData: [UInt8] = []
+    var hevcSpsData: [UInt8] = []
+    var hevcPpsData: [UInt8] = []
     var h264SpsSize: Int?
     var h264PpsSize: Int?
     var parameterSetPrefixHex: String?
@@ -190,9 +202,11 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastStep = "Idle"
     @Published private(set) var decoderConfigSnapshot: ALVRDecoderConfigSnapshot?
+    @Published private(set) var videoToolboxDecoderCreationResult: ALVRVideoToolboxDecoderCreationResult?
 
     private var diagnosticsTask: Task<Void, Never>?
     private var didReadDecoderConfigSnapshot = false
+    private var videoToolboxDecoderBridge: ALVRVideoToolboxDecoderBridge?
 
     var isRunning: Bool {
         if case .running = state { return true }
@@ -302,6 +316,42 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         #endif
     }
 
+    func createHEVCDecoderSkeletonFromCurrentConfig() {
+        guard canCreateHEVCDecoderSkeleton else {
+            videoToolboxDecoderCreationResult = ALVRVideoToolboxDecoderCreationResult(
+                success: false,
+                codec: "hevc",
+                createdFormatDescription: false,
+                createdDecompressionSession: false,
+                formatDescriptionStatus: -1,
+                decompressionSessionStatus: -1,
+                vpsSize: decoderConfigSnapshot?.hevcVpsSize ?? 0,
+                spsSize: decoderConfigSnapshot?.hevcSpsSize ?? 0,
+                ppsSize: decoderConfigSnapshot?.hevcPpsSize ?? 0,
+                nalUnitHeaderLength: 4,
+                errorDescription: "Read a successful HEVC decoder config snapshot with VPS/SPS/PPS before creating the decoder skeleton.",
+                messages: ["HEVC VideoToolbox decoder skeleton not attempted."]
+            )
+            return
+        }
+
+        guard let snapshot = decoderConfigSnapshot else {
+            return
+        }
+
+        let bridge = ALVRVideoToolboxDecoderBridge()
+        let result = bridge.createHEVCDecoderSkeleton(
+            vps: snapshot.hevcVpsData,
+            sps: snapshot.hevcSpsData,
+            pps: snapshot.hevcPpsData
+        )
+
+        videoToolboxDecoderBridge?.invalidate()
+        videoToolboxDecoderBridge = result.success ? bridge : nil
+        videoToolboxDecoderCreationResult = result
+        messages.append(contentsOf: result.messages)
+    }
+
     private func resetForStart() {
         diagnosticsTask?.cancel()
         diagnosticsTask = nil
@@ -347,6 +397,9 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         errorMessage = nil
         lastStep = "Idle"
         decoderConfigSnapshot = nil
+        videoToolboxDecoderCreationResult = nil
+        videoToolboxDecoderBridge?.invalidate()
+        videoToolboxDecoderBridge = nil
         didReadDecoderConfigSnapshot = false
     }
 
@@ -399,6 +452,22 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
             return false
         }
         return !requiresAppRestart && !didReadDecoderConfigSnapshot && decoderConfigEventSeen
+    }
+
+    var canCreateHEVCDecoderSkeleton: Bool {
+        guard let decoderConfigSnapshot else {
+            return false
+        }
+        return decoderConfigSnapshot.success
+            && decoderConfigSnapshot.configCodecGuess == "hevc"
+            && decoderConfigSnapshot.hevcVpsCount > 0
+            && decoderConfigSnapshot.hevcSpsCount > 0
+            && decoderConfigSnapshot.hevcPpsCount > 0
+            && decoderConfigSnapshot.parameterSetsReady
+            && decoderConfigSnapshot.videoToolboxReady
+            && !decoderConfigSnapshot.hevcVpsData.isEmpty
+            && !decoderConfigSnapshot.hevcSpsData.isEmpty
+            && !decoderConfigSnapshot.hevcPpsData.isEmpty
     }
 
     #if canImport(ALVRClientCore)
@@ -474,6 +543,9 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
             hevcVpsSize: parseResult.hevcVpsSize,
             hevcSpsSize: parseResult.hevcSpsSize,
             hevcPpsSize: parseResult.hevcPpsSize,
+            hevcVpsData: parseResult.hevcVpsData,
+            hevcSpsData: parseResult.hevcSpsData,
+            hevcPpsData: parseResult.hevcPpsData,
             h264SpsSize: parseResult.h264SpsSize,
             h264PpsSize: parseResult.h264PpsSize,
             parameterSetPrefixHex: parseResult.parameterSetPrefixHex,
@@ -514,18 +586,21 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
                     hasHevcSignal = true
                     result.hevcVpsCount += 1
                     result.hevcVpsSize = nalSize
+                    result.hevcVpsData = Array(bytes[range])
                     labels.append("HEVC_VPS(32)")
                     isParameterSet = true
                 case 33:
                     hasHevcSignal = true
                     result.hevcSpsCount += 1
                     result.hevcSpsSize = nalSize
+                    result.hevcSpsData = Array(bytes[range])
                     labels.append("HEVC_SPS(33)")
                     isParameterSet = true
                 case 34:
                     hasHevcSignal = true
                     result.hevcPpsCount += 1
                     result.hevcPpsSize = nalSize
+                    result.hevcPpsData = Array(bytes[range])
                     labels.append("HEVC_PPS(34)")
                     isParameterSet = true
                 case 19:

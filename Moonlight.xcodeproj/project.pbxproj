@@ -34,6 +34,7 @@
 		A9D001152FABC10100AAA001 /* ALVRDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */; };
 		A9D004102FABC40100AAA001 /* ALVRMdnsBroadcaster.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D004202FABC40100AAA001 /* ALVRMdnsBroadcaster.swift */; };
 		A9D005102FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D005202FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift */; };
+		A9D006102FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D006202FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift */; };
 		A9D003102FABC30100AAA001 /* ALVRClientCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */; };
 		A9D003112FABC30100AAA001 /* ALVRClientCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3E265EDC2F9D5BCA00B0A566 /* AUSpatialMixer.m in Sources */ = {isa = PBXBuildFile; fileRef = 3E265ED12F9D5BCA00B0A566 /* AUSpatialMixer.m */; };
@@ -350,6 +351,7 @@
 		A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRDiagnosticsView.swift; sourceTree = "<group>"; };
 		A9D004202FABC40100AAA001 /* ALVRMdnsBroadcaster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRMdnsBroadcaster.swift; sourceTree = "<group>"; };
 		A9D005202FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRSessionDiagnosticsManager.swift; sourceTree = "<group>"; };
+		A9D006202FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRVideoToolboxDecoderBridge.swift; sourceTree = "<group>"; };
 		A9D002212FABC20100AAA001 /* ALVRClientCoreBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRClientCoreBridge.swift; sourceTree = "<group>"; };
 		A9D002222FABC20100AAA001 /* ALVRVideoBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRVideoBridge.swift; sourceTree = "<group>"; };
 		A9D002232FABC20100AAA001 /* ALVRRendererBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRRendererBridge.swift; sourceTree = "<group>"; };
@@ -891,6 +893,7 @@
 				A9D001242FABC10100AAA001 /* ALVRRendererContainerView.swift */,
 				A9D005202FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift */,
 				A9D001212FABC10100AAA001 /* ALVRSessionManager.swift */,
+				A9D006202FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift */,
 			);
 			path = ALVR;
 			sourceTree = "<group>";
@@ -1615,6 +1618,7 @@
 				A9D004102FABC40100AAA001 /* ALVRMdnsBroadcaster.swift in Sources */,
 				A9D002132FABC20100AAA001 /* ALVRRendererBridge.swift in Sources */,
 				A9D005102FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift in Sources */,
+				A9D006102FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift in Sources */,
 				F7A1193A2B5DDF73001E8686 /* ServerInfoResponse.m in Sources */,
 				F778956E2B65975900F02568 /* SDLMainWrapper.m in Sources */,
 				F7A1193B2B5DDF73001E8686 /* StreamManager.m in Sources */,

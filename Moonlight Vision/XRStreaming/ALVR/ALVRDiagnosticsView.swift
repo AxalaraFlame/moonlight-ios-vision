@@ -661,6 +661,58 @@ struct ALVRDiagnosticsView: View {
                 }
             }
 
+            Text("This only creates the VideoToolbox decoder session. It does not feed frames or render SteamVR.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Button("Create HEVC Decoder Skeleton") {
+                sessionDiagnosticsManager.createHEVCDecoderSkeletonFromCurrentConfig()
+            }
+            .buttonStyle(.bordered)
+            .disabled(!sessionDiagnosticsManager.canCreateHEVCDecoderSkeleton)
+
+            if let videoToolboxDecoderCreationResult = sessionDiagnosticsManager.videoToolboxDecoderCreationResult {
+                Label(
+                    videoToolboxDecoderCreationResult.success ? "HEVC decoder skeleton created" : "HEVC decoder skeleton failed",
+                    systemImage: videoToolboxDecoderCreationResult.success ? "checkmark.circle.fill" : "xmark.octagon.fill"
+                )
+                .font(.caption)
+
+                Text("Codec: \(videoToolboxDecoderCreationResult.codec)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Created format description: \(videoToolboxDecoderCreationResult.createdFormatDescription ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(videoToolboxDecoderCreationResult.createdFormatDescription ? .green : .orange)
+                Text("Created decompression session: \(videoToolboxDecoderCreationResult.createdDecompressionSession ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(videoToolboxDecoderCreationResult.createdDecompressionSession ? .green : .orange)
+                Text("Format description status: \(videoToolboxDecoderCreationResult.formatDescriptionStatus)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Decompression session status: \(videoToolboxDecoderCreationResult.decompressionSessionStatus)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("HEVC VPS/SPS/PPS sizes: \(videoToolboxDecoderCreationResult.vpsSize)/\(videoToolboxDecoderCreationResult.spsSize)/\(videoToolboxDecoderCreationResult.ppsSize)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("NAL unit header length: \(videoToolboxDecoderCreationResult.nalUnitHeaderLength)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                ForEach(videoToolboxDecoderCreationResult.messages, id: \.self) { message in
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorDescription = videoToolboxDecoderCreationResult.errorDescription {
+                    Text(errorDescription)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
+            }
+
             if sessionDiagnosticsManager.requiresAppRestart {
                 Label("Restart the app before running another ALVR core test.", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
