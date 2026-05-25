@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Darwin
 
 #if canImport(ALVRClientCore)
 import ALVRClientCore
@@ -48,6 +49,18 @@ struct ControlledResumeSmokeResult: Sendable {
     let lastStep: String
 }
 
+struct ALVRClientInfoResult: Sendable {
+    let success: Bool
+    let serviceType: String?
+    let rawHostname: String?
+    let deviceId: String?
+    let protocolId: String?
+    let localIPv4Addresses: [String]
+    let messages: [String]
+    let errorDescription: String?
+    let requiresAppRestart: Bool
+}
+
 @MainActor
 final class ALVRClientCoreBridge {
     static let shared = ALVRClientCoreBridge()
@@ -72,6 +85,101 @@ final class ALVRClientCoreBridge {
     }
 
     private init() {}
+
+    func loadClientInfo() -> ALVRClientInfoResult {
+        #if canImport(ALVRClientCore)
+        var messages = ["ALVRClientCore import available"]
+        var didInitialize = false
+        var didDestroy = false
+
+        defer {
+            if didInitialize && !didDestroy {
+                alvr_destroy()
+            }
+        }
+
+        let refreshRates: [Float] = [90]
+        refreshRates.withUnsafeBufferPointer { refreshRatesPointer in
+            let capabilities = AlvrClientCapabilities(
+                default_view_width: 1920,
+                default_view_height: 1920,
+                refresh_rates: refreshRatesPointer.baseAddress,
+                refresh_rates_count: 1,
+                foveated_encoding: false,
+                encoder_high_profile: true,
+                encoder_10_bits: false,
+                encoder_av1: false,
+                prefer_10bit: false,
+                prefer_full_range: true,
+                preferred_encoding_gamma: 1.0,
+                prefer_hdr: false
+            )
+
+            alvr_initialize(capabilities)
+            didInitialize = true
+            messages.append("Called alvr_initialize(capabilities)")
+        }
+
+        alvr_initialize_logging()
+        messages.append("Called alvr_initialize_logging()")
+
+        let serviceType = Self.readCStringFromALVR(bufferSize: 1024) { buffer in
+            alvr_mdns_service(buffer)
+        }
+        messages.append("Read ALVR mDNS service type")
+
+        let rawHostname = Self.readCStringFromALVR(bufferSize: 1024) { buffer in
+            alvr_hostname(buffer)
+        }
+        messages.append("Read ALVR hostname")
+
+        let protocolId = Self.readCStringFromALVR(bufferSize: 1024) { buffer in
+            alvr_protocol_id(buffer)
+        }
+        messages.append("Read ALVR protocol ID")
+
+        alvr_destroy()
+        didDestroy = true
+        messages.append("Called alvr_destroy()")
+
+        let trimmedHostname = rawHostname.value.isEmpty ? nil : rawHostname.value
+        let deviceId = trimmedHostname.map { $0.hasSuffix(".alvr") ? $0 : $0 + ".alvr" }
+
+        if serviceType.wasTruncated {
+            messages.append("ALVR mDNS service type may be truncated; returned \(serviceType.returnedLength) bytes for \(serviceType.bufferSize)-byte buffer")
+        }
+        if rawHostname.wasTruncated {
+            messages.append("ALVR hostname may be truncated; returned \(rawHostname.returnedLength) bytes for \(rawHostname.bufferSize)-byte buffer")
+        }
+        if protocolId.wasTruncated {
+            messages.append("ALVR protocol ID may be truncated; returned \(protocolId.returnedLength) bytes for \(protocolId.bufferSize)-byte buffer")
+        }
+
+        return ALVRClientInfoResult(
+            success: true,
+            serviceType: serviceType.value.isEmpty ? nil : serviceType.value.replacingOccurrences(of: ".local", with: ""),
+            rawHostname: trimmedHostname,
+            deviceId: deviceId,
+            protocolId: protocolId.value.isEmpty ? nil : protocolId.value,
+            localIPv4Addresses: Self.localIPv4Addresses(),
+            messages: messages,
+            errorDescription: nil,
+            requiresAppRestart: false
+        )
+        #else
+        return ALVRClientInfoResult(
+            success: false,
+            serviceType: nil,
+            rawHostname: nil,
+            deviceId: nil,
+            protocolId: nil,
+            localIPv4Addresses: Self.localIPv4Addresses(),
+            messages: ["ALVRClientCore import unavailable"],
+            errorDescription: "ALVRClientCore is not available to this target.",
+            requiresAppRestart: false
+        )
+        #endif
+    }
 
     func runSymbolSmokeTest() -> SymbolSmokeResult {
         #if canImport(ALVRClientCore)
@@ -451,4 +559,71 @@ final class ALVRClientCoreBridge {
         )
     }
     #endif
+
+    private nonisolated static func readCStringFromALVR(bufferSize: Int, _ read: (UnsafeMutablePointer<CChar>?) -> UInt64) -> (value: String, returnedLength: UInt64, bufferSize: Int, wasTruncated: Bool) {
+        var buffer = [CChar](repeating: 0, count: bufferSize)
+        let returnedLength = buffer.withUnsafeMutableBufferPointer { bufferPointer in
+            read(bufferPointer.baseAddress)
+        }
+
+        buffer[bufferSize - 1] = 0
+        let value = buffer.withUnsafeBufferPointer { bufferPointer in
+            String(cString: bufferPointer.baseAddress!)
+        }.trimmingCharacters(in: .controlCharacters)
+
+        return (
+            value: value,
+            returnedLength: returnedLength,
+            bufferSize: bufferSize,
+            wasTruncated: returnedLength >= UInt64(bufferSize)
+        )
+    }
+
+    private nonisolated static func localIPv4Addresses() -> [String] {
+        var interfaceAddresses: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaceAddresses) == 0, let firstAddress = interfaceAddresses else {
+            return []
+        }
+        defer { freeifaddrs(interfaceAddresses) }
+
+        var addresses: [String] = []
+        var pointer: UnsafeMutablePointer<ifaddrs>? = firstAddress
+        while let currentPointer = pointer {
+            let interface = currentPointer.pointee
+            defer { pointer = interface.ifa_next }
+
+            guard let address = interface.ifa_addr, address.pointee.sa_family == UInt8(AF_INET) else {
+                continue
+            }
+
+            let flags = Int32(interface.ifa_flags)
+            guard (flags & IFF_LOOPBACK) == 0 else {
+                continue
+            }
+
+            var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let result = getnameinfo(
+                address,
+                socklen_t(address.pointee.sa_len),
+                &hostname,
+                socklen_t(hostname.count),
+                nil,
+                0,
+                NI_NUMERICHOST
+            )
+
+            guard result == 0 else {
+                continue
+            }
+
+            let ipAddress = String(cString: hostname)
+            guard !ipAddress.hasPrefix("127."), !ipAddress.hasPrefix("169.254.") else {
+                continue
+            }
+
+            addresses.append(ipAddress)
+        }
+
+        return Array(Set(addresses)).sorted()
+    }
 }

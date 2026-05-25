@@ -10,13 +10,10 @@ import SwiftUI
 struct ALVRConnectionView: View {
     @EnvironmentObject private var viewModel: MainViewModel
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openImmersiveSpace) private var openImmersiveSpace
 
     @ObservedObject private var sessionManager = ALVRSessionManager.shared
 
     let app: TemporaryApp?
-
-    @State private var pcAddress = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -30,16 +27,15 @@ struct ALVRConnectionView: View {
                         .font(.title2)
                         .fontWeight(.semibold)
 
-                    Text(app?.name ?? viewModel.localized("stream_mode_vr"))
+                    Text("PCVR Headset Client")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
             }
 
-            TextField(viewModel.localized("alvr_pc_ip_placeholder"), text: $pcAddress)
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+            Text("ALVR connects from the PC side. Open ALVR Streamer on your PC and add or discover this Vision Pro headset.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
 
             if let error = sessionManager.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -65,14 +61,6 @@ struct ALVRConnectionView: View {
                 .disabled(!sessionManager.isConnected && !isConnecting)
 
                 Spacer()
-
-                Button {
-                    Task { await connectVR() }
-                } label: {
-                    Label(viewModel.localized("alvr_connect_vr"), systemImage: "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isConnecting)
             }
         }
         .padding(28)
@@ -83,13 +71,6 @@ struct ALVRConnectionView: View {
     private var isConnecting: Bool {
         if case .connecting = sessionManager.state { return true }
         return false
-    }
-
-    @MainActor
-    private func connectVR() async {
-        guard await sessionManager.connect(to: pcAddress, app: app, viewModel: viewModel) else { return }
-        dismiss()
-        await openImmersiveSpace(id: "ALVRImmersiveSpace")
     }
 
     @MainActor

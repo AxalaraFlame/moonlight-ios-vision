@@ -13,6 +13,7 @@ struct ALVRDiagnosticsView: View {
     @State private var symbolSmokeResult: SymbolSmokeResult?
     @State private var lifecycleSmokeResult: LifecycleSmokeResult?
     @State private var controlledResumeSmokeResult: ControlledResumeSmokeResult?
+    @State private var clientInfoResult: ALVRClientInfoResult?
     @State private var isControlledResumeSmokeTestRunning = false
 
     var body: some View {
@@ -20,16 +21,91 @@ struct ALVRDiagnosticsView: View {
             Label(statusText, systemImage: statusIcon)
                 .font(.headline)
 
-            if !sessionManager.hostAddress.isEmpty {
-                Text(viewModel.localized("alvr_pc_ip_label") + ": " + sessionManager.hostAddress)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             if !sessionManager.appName.isEmpty {
                 Text(viewModel.localized("alvr_app_label") + ": " + sessionManager.appName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Text("ALVR connects from the PC side. Open ALVR Streamer on your PC and add or discover this Vision Pro headset.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Button("Load ALVR Client Info") {
+                guard !coreTestsRequireRestart else {
+                    clientInfoResult = ALVRClientInfoResult(
+                        success: false,
+                        serviceType: nil,
+                        rawHostname: nil,
+                        deviceId: nil,
+                        protocolId: nil,
+                        localIPv4Addresses: [],
+                        messages: ["Restart the app before running another ALVR core test."],
+                        errorDescription: "ALVR core was resumed in this app process.",
+                        requiresAppRestart: true
+                    )
+                    return
+                }
+
+                clientInfoResult = ALVRClientCoreBridge.shared.loadClientInfo()
+            }
+            .buttonStyle(.bordered)
+            .disabled(coreTestsRequireRestart)
+
+            if let clientInfoResult {
+                Label(
+                    clientInfoResult.success ? "ALVR client info loaded" : "ALVR client info unavailable",
+                    systemImage: clientInfoResult.success ? "checkmark.circle.fill" : "xmark.octagon.fill"
+                )
+                .font(.caption)
+
+                if let serviceType = clientInfoResult.serviceType {
+                    Text("Service type: \(serviceType)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let rawHostname = clientInfoResult.rawHostname {
+                    Text("Hostname: \(rawHostname)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let deviceId = clientInfoResult.deviceId {
+                    Text("Device ID: \(deviceId)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let protocolId = clientInfoResult.protocolId {
+                    Text("Protocol ID: \(protocolId)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !clientInfoResult.localIPv4Addresses.isEmpty {
+                    Text("Local IPv4: " + clientInfoResult.localIPv4Addresses.joined(separator: ", "))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if clientInfoResult.requiresAppRestart {
+                    Label("Restart the app before running another ALVR core test.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                ForEach(clientInfoResult.messages, id: \.self) { message in
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorDescription = clientInfoResult.errorDescription {
+                    Text(errorDescription)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
             }
 
             Divider()
