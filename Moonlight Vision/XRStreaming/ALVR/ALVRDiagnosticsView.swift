@@ -15,7 +15,9 @@ struct ALVRDiagnosticsView: View {
     @State private var lifecycleSmokeResult: LifecycleSmokeResult?
     @State private var controlledResumeSmokeResult: ControlledResumeSmokeResult?
     @State private var clientInfoResult: ALVRClientInfoResult?
+    @State private var decoderMetadataScanResult: ALVRDecoderMetadataScanResult?
     @State private var isControlledResumeSmokeTestRunning = false
+    @State private var isDecoderMetadataScanRunning = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -174,6 +176,144 @@ struct ALVRDiagnosticsView: View {
                 Text(lastError)
                     .font(.caption2)
                     .foregroundStyle(.red)
+            }
+
+            Text("Before decoder metadata scan: load ALVR client info, start ALVR mDNS broadcast, and confirm the PC ALVR Streamer can discover this headset.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Button(isDecoderMetadataScanRunning ? "Running Decoder Metadata Scan..." : "Run Decoder Metadata Scan") {
+                isDecoderMetadataScanRunning = true
+                decoderMetadataScanResult = nil
+
+                Task {
+                    decoderMetadataScanResult = await ALVRClientCoreBridge.shared.runDecoderMetadataScan()
+                    isDecoderMetadataScanRunning = false
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(isDecoderMetadataScanRunning || coreTestsRequireRestart || clientInfoResult?.success != true)
+
+            if let decoderMetadataScanResult {
+                Label(
+                    decoderMetadataStatusText(for: decoderMetadataScanResult),
+                    systemImage: decoderMetadataStatusIcon(for: decoderMetadataScanResult)
+                )
+                .font(.caption)
+
+                Text("Scan completed: \(decoderMetadataScanResult.scanCompleted ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Received video frames: \(decoderMetadataScanResult.receivedVideoFrames ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(decoderMetadataScanResult.receivedVideoFrames ? .green : .orange)
+                Text("Initialized: \(decoderMetadataScanResult.didInitialize ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Set decoder callback: \(decoderMetadataScanResult.didSetDecoderCallback ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Resumed: \(decoderMetadataScanResult.didResume ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Paused: \(decoderMetadataScanResult.didPause ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Destroy skipped: \(decoderMetadataScanResult.destroySkipped ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(decoderMetadataScanResult.destroySkipped ? .orange : .secondary)
+                Text("Requires app restart: \(decoderMetadataScanResult.requiresAppRestart ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(decoderMetadataScanResult.requiresAppRestart ? .orange : .secondary)
+                Text("Polled events: \(decoderMetadataScanResult.polledEventCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Streaming event seen: \(decoderMetadataScanResult.streamingRelatedEventSeen ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Decoder config event seen: \(decoderMetadataScanResult.decoderConfigEventSeen ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Frame count: \(decoderMetadataScanResult.frameCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Total bytes: \(decoderMetadataScanResult.totalBytes)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                if let noFramesReceivedMessage = decoderMetadataScanResult.noFramesReceivedMessage {
+                    Text(noFramesReceivedMessage)
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+
+                if let minBufferSize = decoderMetadataScanResult.minBufferSize {
+                    Text("Min buffer size: \(minBufferSize)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let maxBufferSize = decoderMetadataScanResult.maxBufferSize {
+                    Text("Max buffer size: \(maxBufferSize)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastTimestampNs = decoderMetadataScanResult.lastTimestampNs {
+                    Text("Last timestamp ns: \(lastTimestampNs)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let firstFramePrefixHex = decoderMetadataScanResult.firstFramePrefixHex {
+                    Text("First prefix: \(firstFramePrefixHex)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastFramePrefixHex = decoderMetadataScanResult.lastFramePrefixHex {
+                    Text("Last prefix: \(lastFramePrefixHex)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("Duration: \(decoderMetadataScanResult.durationMilliseconds) ms")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Last step: \(decoderMetadataScanResult.lastStep)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                if decoderMetadataScanResult.requiresAppRestart {
+                    Label("Restart the app before running another ALVR core test.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                if !decoderMetadataScanResult.eventTagNames.isEmpty {
+                    Text("Event tags: " + decoderMetadataScanResult.eventTagNames.joined(separator: ", "))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !decoderMetadataScanResult.eventTagRawValues.isEmpty {
+                    let rawValues = decoderMetadataScanResult.eventTagRawValues.map(String.init).joined(separator: ", ")
+                    Text("Event raw values: " + rawValues)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(decoderMetadataScanResult.messages, id: \.self) { message in
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorDescription = decoderMetadataScanResult.errorDescription {
+                    Text(errorDescription)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
             }
 
             Divider()
@@ -357,6 +497,27 @@ struct ALVRDiagnosticsView: View {
 
     private var coreTestsRequireRestart: Bool {
         controlledResumeSmokeResult?.requiresAppRestart == true
+            || decoderMetadataScanResult?.requiresAppRestart == true
+    }
+
+    private func decoderMetadataStatusText(for result: ALVRDecoderMetadataScanResult) -> String {
+        if result.receivedVideoFrames {
+            return "Decoder metadata callback received frames"
+        }
+        if result.scanCompleted {
+            return "Decoder metadata scan completed; no video frames received"
+        }
+        return "Decoder metadata scan failed"
+    }
+
+    private func decoderMetadataStatusIcon(for result: ALVRDecoderMetadataScanResult) -> String {
+        if result.receivedVideoFrames {
+            return "checkmark.circle.fill"
+        }
+        if result.scanCompleted {
+            return "exclamationmark.triangle.fill"
+        }
+        return "xmark.octagon.fill"
     }
 
     private var statusText: String {

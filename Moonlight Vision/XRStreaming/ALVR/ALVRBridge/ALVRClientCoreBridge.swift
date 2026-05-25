@@ -61,12 +61,169 @@ struct ALVRClientInfoResult: Sendable {
     let requiresAppRestart: Bool
 }
 
+struct ALVRDecoderMetadataSnapshot: Sendable {
+    let frameCount: Int
+    let totalBytes: UInt64
+    let lastTimestampNs: UInt64?
+    let minBufferSize: UInt64?
+    let maxBufferSize: UInt64?
+    let firstFramePrefixHex: String?
+    let lastFramePrefixHex: String?
+    let messages: [String]
+}
+
+struct ALVRDecoderMetadataScanResult: Sendable {
+    let success: Bool
+    let scanCompleted: Bool
+    let receivedVideoFrames: Bool
+    let messages: [String]
+    let didInitialize: Bool
+    let didSetDecoderCallback: Bool
+    let didResume: Bool
+    let didPause: Bool
+    let didDestroy: Bool
+    let destroySkipped: Bool
+    let requiresAppRestart: Bool
+    let polledEventCount: Int
+    let eventTagNames: [String]
+    let eventTagRawValues: [UInt32]
+    let streamingRelatedEventSeen: Bool
+    let decoderConfigEventSeen: Bool
+    let frameCount: Int
+    let totalBytes: UInt64
+    let lastTimestampNs: UInt64?
+    let minBufferSize: UInt64?
+    let maxBufferSize: UInt64?
+    let firstFramePrefixHex: String?
+    let lastFramePrefixHex: String?
+    let noFramesReceivedMessage: String?
+    let durationMilliseconds: Int
+    let lastStep: String
+    let errorDescription: String?
+}
+
+#if canImport(ALVRClientCore)
+final class ALVRDecoderMetadataCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isActive = false
+    private var frameCount = 0
+    private var totalBytes: UInt64 = 0
+    private var lastTimestampNs: UInt64?
+    private var minBufferSize: UInt64?
+    private var maxBufferSize: UInt64?
+    private var firstFramePrefixHex: String?
+    private var lastFramePrefixHex: String?
+    private var messages: [String] = []
+
+    func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        isActive = false
+        frameCount = 0
+        totalBytes = 0
+        lastTimestampNs = nil
+        minBufferSize = nil
+        maxBufferSize = nil
+        firstFramePrefixHex = nil
+        lastFramePrefixHex = nil
+        messages = []
+    }
+
+    func start() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        isActive = true
+        messages.append("Decoder metadata collector started")
+    }
+
+    func stop() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        isActive = false
+        messages.append("Decoder metadata collector stopped")
+    }
+
+    func record(frameData: AlvrVideoFrameData) {
+        let bufferSize = frameData.buffer_size
+        let timestamp = frameData.timestamp_ns
+        let prefixHex = Self.prefixHex(bufferPointer: frameData.buffer_ptr, bufferSize: bufferSize)
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard isActive else {
+            return
+        }
+
+        frameCount += 1
+        totalBytes &+= bufferSize
+        lastTimestampNs = timestamp
+        minBufferSize = minBufferSize.map { min($0, bufferSize) } ?? bufferSize
+        maxBufferSize = maxBufferSize.map { max($0, bufferSize) } ?? bufferSize
+
+        if firstFramePrefixHex == nil {
+            firstFramePrefixHex = prefixHex
+        }
+        lastFramePrefixHex = prefixHex
+
+        if bufferSize == 0 {
+            messages.append("Received zero-byte decoder frame at \(timestamp)")
+        } else if frameData.buffer_ptr == nil {
+            messages.append("Received decoder frame with nil buffer at \(timestamp)")
+        }
+    }
+
+    func snapshot() -> ALVRDecoderMetadataSnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+
+        return ALVRDecoderMetadataSnapshot(
+            frameCount: frameCount,
+            totalBytes: totalBytes,
+            lastTimestampNs: lastTimestampNs,
+            minBufferSize: minBufferSize,
+            maxBufferSize: maxBufferSize,
+            firstFramePrefixHex: firstFramePrefixHex,
+            lastFramePrefixHex: lastFramePrefixHex,
+            messages: messages
+        )
+    }
+
+    private static func prefixHex(bufferPointer: UnsafePointer<UInt8>?, bufferSize: UInt64) -> String? {
+        guard let bufferPointer, bufferSize > 0 else {
+            return nil
+        }
+
+        let prefixCount = min(Int(bufferSize), 16)
+        var parts: [String] = []
+        parts.reserveCapacity(prefixCount)
+
+        for index in 0..<prefixCount {
+            parts.append(String(format: "%02X", bufferPointer.advanced(by: index).pointee))
+        }
+
+        return parts.joined(separator: " ")
+    }
+}
+
+private let alvrDecoderMetadataCollector = ALVRDecoderMetadataCollector()
+
+private let alvrDecoderMetadataCallback: @convention(c) (AlvrVideoFrameData) -> Bool = { frameData in
+    alvrDecoderMetadataCollector.record(frameData: frameData)
+    return true
+}
+#endif
+
 @MainActor
 final class ALVRClientCoreBridge {
     static let shared = ALVRClientCoreBridge()
 
     private var isLifecycleSmokeTestRunning = false
     private var isControlledResumeSmokeTestRunning = false
+    private var isDecoderMetadataScanRunning = false
 
     var isFrameworkAvailable: Bool {
         #if canImport(ALVRClientCore)
@@ -362,6 +519,80 @@ final class ALVRClientCoreBridge {
         #endif
     }
 
+    func runDecoderMetadataScan(durationMilliseconds: Int = 3000) async -> ALVRDecoderMetadataScanResult {
+        guard !isDecoderMetadataScanRunning else {
+            return ALVRDecoderMetadataScanResult(
+                success: false,
+                scanCompleted: false,
+                receivedVideoFrames: false,
+                messages: ["Decoder metadata scan already running"],
+                didInitialize: false,
+                didSetDecoderCallback: false,
+                didResume: false,
+                didPause: false,
+                didDestroy: false,
+                destroySkipped: false,
+                requiresAppRestart: false,
+                polledEventCount: 0,
+                eventTagNames: [],
+                eventTagRawValues: [],
+                streamingRelatedEventSeen: false,
+                decoderConfigEventSeen: false,
+                frameCount: 0,
+                totalBytes: 0,
+                lastTimestampNs: nil,
+                minBufferSize: nil,
+                maxBufferSize: nil,
+                firstFramePrefixHex: nil,
+                lastFramePrefixHex: nil,
+                noFramesReceivedMessage: nil,
+                durationMilliseconds: 0,
+                lastStep: "Already running",
+                errorDescription: "Decoder metadata scan already running."
+            )
+        }
+
+        isDecoderMetadataScanRunning = true
+        defer { isDecoderMetadataScanRunning = false }
+
+        #if canImport(ALVRClientCore)
+        let cappedDurationMilliseconds = min(max(durationMilliseconds, 500), 5000)
+        return await Task.detached(priority: .userInitiated) {
+            await Self.performDecoderMetadataScan(durationMilliseconds: cappedDurationMilliseconds)
+        }.value
+        #else
+        return ALVRDecoderMetadataScanResult(
+            success: false,
+            scanCompleted: false,
+            receivedVideoFrames: false,
+            messages: ["ALVRClientCore import unavailable"],
+            didInitialize: false,
+            didSetDecoderCallback: false,
+            didResume: false,
+            didPause: false,
+            didDestroy: false,
+            destroySkipped: false,
+            requiresAppRestart: false,
+            polledEventCount: 0,
+            eventTagNames: [],
+            eventTagRawValues: [],
+            streamingRelatedEventSeen: false,
+            decoderConfigEventSeen: false,
+            frameCount: 0,
+            totalBytes: 0,
+            lastTimestampNs: nil,
+            minBufferSize: nil,
+            maxBufferSize: nil,
+            firstFramePrefixHex: nil,
+            lastFramePrefixHex: nil,
+            noFramesReceivedMessage: nil,
+            durationMilliseconds: 0,
+            lastStep: "ALVRClientCore unavailable",
+            errorDescription: "ALVRClientCore is not available to this target."
+        )
+        #endif
+    }
+
     #if canImport(ALVRClientCore)
     private nonisolated static func performControlledResumeSmokeTest(durationMilliseconds: Int) async -> ControlledResumeSmokeResult {
         var messages = ["ALVRClientCore import available"]
@@ -485,6 +716,169 @@ final class ALVRClientCoreBridge {
             errorDescription: nil,
             durationMilliseconds: Int(Date().timeIntervalSince(startDate) * 1000),
             lastStep: lastStep
+        )
+    }
+
+    private nonisolated static func performDecoderMetadataScan(durationMilliseconds: Int) async -> ALVRDecoderMetadataScanResult {
+        var messages = [
+            "ALVRClientCore import available",
+            "Metadata-only scan returns true without decoding. This is only for short diagnostics."
+        ]
+        var didInitialize = false
+        var didSetDecoderCallback = false
+        var didResume = false
+        var didPause = false
+        let didDestroy = false
+        let destroySkipped = true
+        let requiresAppRestart = true
+        var eventTagRawValues: [UInt32] = []
+        var eventTagNames: [String] = []
+        var streamingRelatedEventSeen = false
+        var decoderConfigEventSeen = false
+        var lastStep = "Not started"
+        var didStopCollector = false
+        let startDate = Date()
+        let deadline = Date().addingTimeInterval(Double(durationMilliseconds) / 1000.0)
+        let maxPollIterations = 5000
+
+        func record(_ message: String) {
+            lastStep = message
+            messages.append(message)
+            print("[ALVR Decoder Metadata Scan] \(message)")
+        }
+
+        alvrDecoderMetadataCollector.reset()
+
+        defer {
+            if didResume && !didPause {
+                record("Calling alvr_pause")
+                alvr_pause()
+                didPause = true
+                record("Called alvr_pause() from cleanup")
+            }
+            if !didStopCollector {
+                alvrDecoderMetadataCollector.stop()
+            }
+        }
+
+        alvrDecoderMetadataCollector.start()
+
+        let refreshRates: [Float] = [90]
+        refreshRates.withUnsafeBufferPointer { refreshRatesPointer in
+            let capabilities = AlvrClientCapabilities(
+                default_view_width: 1920,
+                default_view_height: 1920,
+                refresh_rates: refreshRatesPointer.baseAddress,
+                refresh_rates_count: 1,
+                foveated_encoding: false,
+                encoder_high_profile: true,
+                encoder_10_bits: false,
+                encoder_av1: false,
+                prefer_10bit: false,
+                prefer_full_range: true,
+                preferred_encoding_gamma: 1.0,
+                prefer_hdr: false
+            )
+
+            record("Calling alvr_initialize")
+            alvr_initialize(capabilities)
+            didInitialize = true
+            record("Called alvr_initialize(capabilities)")
+        }
+
+        record("Calling alvr_initialize_logging")
+        alvr_initialize_logging()
+        record("Called alvr_initialize_logging()")
+
+        record("Calling alvr_set_decoder_input_callback")
+        alvr_set_decoder_input_callback(nil, alvrDecoderMetadataCallback)
+        didSetDecoderCallback = true
+        record("Called alvr_set_decoder_input_callback(nil, metadataCallback)")
+
+        record("Calling alvr_resume")
+        alvr_resume()
+        didResume = true
+        record("Called alvr_resume()")
+
+        record("Entering limited decoder metadata poll loop for \(durationMilliseconds) ms")
+        for _ in 0..<maxPollIterations {
+            guard Date() < deadline else {
+                break
+            }
+
+            var event = AlvrEvent()
+            if alvr_poll_event(&event) {
+                let rawValue = UInt32(event.tag)
+                let tagName = Self.eventTagName(for: rawValue)
+
+                eventTagRawValues.append(rawValue)
+                eventTagNames.append(tagName)
+                record("Polled event tag: \(tagName) (\(rawValue))")
+
+                if rawValue == UInt32(ALVR_EVENT_STREAMING_STARTED.rawValue)
+                    || rawValue == UInt32(ALVR_EVENT_STREAMING_STOPPED.rawValue) {
+                    streamingRelatedEventSeen = true
+                }
+                if rawValue == UInt32(ALVR_EVENT_DECODER_CONFIG.rawValue) {
+                    decoderConfigEventSeen = true
+                }
+            }
+
+            if alvrDecoderMetadataCollector.snapshot().frameCount >= 30 {
+                record("Collected 30 decoder metadata frames; stopping scan early")
+                break
+            }
+
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        record("Leaving decoder metadata poll loop")
+
+        record("Calling alvr_pause")
+        alvr_pause()
+        didPause = true
+        record("Called alvr_pause()")
+
+        record("Skipped alvr_destroy() after resume. Restart the app before running another ALVR core test.")
+
+        alvrDecoderMetadataCollector.stop()
+        didStopCollector = true
+        let snapshot = alvrDecoderMetadataCollector.snapshot()
+        messages.append(contentsOf: snapshot.messages)
+        let scanCompleted = didInitialize && didSetDecoderCallback && didResume && didPause
+        let receivedVideoFrames = snapshot.frameCount > 0
+        let noFramesReceivedMessage = receivedVideoFrames ? nil : "No video frames received. The PC ALVR Streamer has not entered the streaming/decoder path yet."
+        if let noFramesReceivedMessage {
+            messages.append(noFramesReceivedMessage)
+        }
+
+        return ALVRDecoderMetadataScanResult(
+            success: scanCompleted,
+            scanCompleted: scanCompleted,
+            receivedVideoFrames: receivedVideoFrames,
+            messages: messages,
+            didInitialize: didInitialize,
+            didSetDecoderCallback: didSetDecoderCallback,
+            didResume: didResume,
+            didPause: didPause,
+            didDestroy: didDestroy,
+            destroySkipped: destroySkipped,
+            requiresAppRestart: requiresAppRestart,
+            polledEventCount: eventTagRawValues.count,
+            eventTagNames: eventTagNames,
+            eventTagRawValues: eventTagRawValues,
+            streamingRelatedEventSeen: streamingRelatedEventSeen,
+            decoderConfigEventSeen: decoderConfigEventSeen,
+            frameCount: snapshot.frameCount,
+            totalBytes: snapshot.totalBytes,
+            lastTimestampNs: snapshot.lastTimestampNs,
+            minBufferSize: snapshot.minBufferSize,
+            maxBufferSize: snapshot.maxBufferSize,
+            firstFramePrefixHex: snapshot.firstFramePrefixHex,
+            lastFramePrefixHex: snapshot.lastFramePrefixHex,
+            noFramesReceivedMessage: noFramesReceivedMessage,
+            durationMilliseconds: Int(Date().timeIntervalSince(startDate) * 1000),
+            lastStep: lastStep,
+            errorDescription: nil
         )
     }
     #endif
