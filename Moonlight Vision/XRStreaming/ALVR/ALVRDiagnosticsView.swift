@@ -11,6 +11,7 @@ struct ALVRDiagnosticsView: View {
     @EnvironmentObject private var viewModel: MainViewModel
     @ObservedObject private var sessionManager = ALVRSessionManager.shared
     @StateObject private var mdnsBroadcaster = ALVRMdnsBroadcaster()
+    @StateObject private var sessionDiagnosticsManager = ALVRSessionDiagnosticsManager()
     @State private var symbolSmokeResult: SymbolSmokeResult?
     @State private var lifecycleSmokeResult: LifecycleSmokeResult?
     @State private var controlledResumeSmokeResult: ControlledResumeSmokeResult?
@@ -316,6 +317,143 @@ struct ALVRDiagnosticsView: View {
                 }
             }
 
+            Text("Use ALVR Session Diagnostics after the PC ALVR Streamer has discovered or trusted this headset. This does not render SteamVR yet.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Button("Start ALVR Session Diagnostics") {
+                    sessionDiagnosticsManager.start(
+                        clientInfo: clientInfoResult,
+                        isMdnsBroadcasting: mdnsBroadcaster.isBroadcasting
+                    )
+                }
+                .buttonStyle(.bordered)
+                .disabled(
+                    coreTestsRequireRestart
+                        || sessionDiagnosticsManager.isRunning
+                        || sessionDiagnosticsManager.isStopping
+                        || clientInfoResult?.success != true
+                        || !mdnsBroadcaster.isBroadcasting
+                )
+
+                Button("Stop ALVR Session Diagnostics") {
+                    sessionDiagnosticsManager.stop()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!sessionDiagnosticsManager.isRunning)
+            }
+
+            Text("Session diagnostics state: \(sessionDiagnosticsManager.state.description)")
+                .font(.caption2)
+                .foregroundStyle(sessionDiagnosticsManager.isRunning ? .green : .secondary)
+            Text("Elapsed: \(sessionDiagnosticsManager.elapsedSeconds) s")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Streaming event seen: \(sessionDiagnosticsManager.streamingEventSeen ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Decoder config event seen: \(sessionDiagnosticsManager.decoderConfigEventSeen ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Haptics event seen: \(sessionDiagnosticsManager.hapticsEventSeen ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Frame count: \(sessionDiagnosticsManager.frameCount)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Total bytes: \(sessionDiagnosticsManager.totalBytes)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Last step: \(sessionDiagnosticsManager.lastStep)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            if clientInfoResult?.success != true {
+                Text("Load ALVR Client Info before starting session diagnostics.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !mdnsBroadcaster.isBroadcasting {
+                Text("Start ALVR mDNS Broadcast before starting session diagnostics.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let lastTimestampNs = sessionDiagnosticsManager.lastTimestampNs {
+                Text("Last timestamp ns: \(lastTimestampNs)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let minBufferSize = sessionDiagnosticsManager.minBufferSize {
+                Text("Min buffer size: \(minBufferSize)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let maxBufferSize = sessionDiagnosticsManager.maxBufferSize {
+                Text("Max buffer size: \(maxBufferSize)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let firstFramePrefixHex = sessionDiagnosticsManager.firstFramePrefixHex {
+                Text("First prefix: \(firstFramePrefixHex)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let lastFramePrefixHex = sessionDiagnosticsManager.lastFramePrefixHex {
+                Text("Last prefix: \(lastFramePrefixHex)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !sessionDiagnosticsManager.eventTagNames.isEmpty {
+                Text("Event tags: " + sessionDiagnosticsManager.eventTagNames.joined(separator: ", "))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !sessionDiagnosticsManager.eventTagRawValues.isEmpty {
+                let rawValues = sessionDiagnosticsManager.eventTagRawValues.map(String.init).joined(separator: ", ")
+                Text("Event raw values: " + rawValues)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !sessionDiagnosticsManager.hudMessages.isEmpty {
+                Text("HUD messages:")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                ForEach(sessionDiagnosticsManager.hudMessages, id: \.self) { hudMessage in
+                    Text(hudMessage)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if sessionDiagnosticsManager.requiresAppRestart {
+                Label("Restart the app before running another ALVR core test.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            ForEach(sessionDiagnosticsManager.messages, id: \.self) { message in
+                Text(message)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let errorMessage = sessionDiagnosticsManager.errorMessage {
+                Text(errorMessage)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+            }
+
             Divider()
                 .opacity(0.35)
 
@@ -498,6 +636,7 @@ struct ALVRDiagnosticsView: View {
     private var coreTestsRequireRestart: Bool {
         controlledResumeSmokeResult?.requiresAppRestart == true
             || decoderMetadataScanResult?.requiresAppRestart == true
+            || sessionDiagnosticsManager.requiresAppRestart
     }
 
     private func decoderMetadataStatusText(for result: ALVRDecoderMetadataScanResult) -> String {
