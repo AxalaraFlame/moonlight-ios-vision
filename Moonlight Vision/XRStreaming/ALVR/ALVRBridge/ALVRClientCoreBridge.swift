@@ -11,6 +11,13 @@ import Foundation
 import ALVRClientCore
 #endif
 
+struct SymbolSmokeResult {
+    let success: Bool
+    let messages: [String]
+    let pathId: UInt64?
+    let errorDescription: String?
+}
+
 @MainActor
 final class ALVRClientCoreBridge {
     static let shared = ALVRClientCoreBridge()
@@ -32,6 +39,39 @@ final class ALVRClientCoreBridge {
     }
 
     private init() {}
+
+    func runSymbolSmokeTest() -> SymbolSmokeResult {
+        #if canImport(ALVRClientCore)
+        alvr_initialize_logging()
+
+        let pathId = "/user/head".withCString { pathPointer in
+            alvr_path_string_to_id(pathPointer)
+        }
+
+        "Moonlight Vision ALVR symbol smoke test".withCString { messagePointer in
+            alvr_log(AlvrLogLevel(ALVR_LOG_LEVEL_INFO.rawValue), messagePointer)
+        }
+
+        return SymbolSmokeResult(
+            success: true,
+            messages: [
+                "ALVRClientCore import available",
+                "Called alvr_initialize_logging()",
+                "Called alvr_path_string_to_id(\"/user/head\")",
+                "Called alvr_log(ALVR_LOG_LEVEL_INFO, ...)"
+            ],
+            pathId: pathId,
+            errorDescription: nil
+        )
+        #else
+        return SymbolSmokeResult(
+            success: false,
+            messages: ["ALVRClientCore import unavailable"],
+            pathId: nil,
+            errorDescription: "ALVRClientCore is not available to this target."
+        )
+        #endif
+    }
 
     func initializePlaceholder() {
         // TODO: Bridge alvr_initialize once the framework is linked and symbols are verified.

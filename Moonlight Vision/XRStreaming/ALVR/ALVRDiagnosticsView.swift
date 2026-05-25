@@ -10,6 +10,7 @@ import SwiftUI
 struct ALVRDiagnosticsView: View {
     @EnvironmentObject private var viewModel: MainViewModel
     @ObservedObject private var sessionManager = ALVRSessionManager.shared
+    @State private var symbolSmokeResult: SymbolSmokeResult?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -26,6 +27,40 @@ struct ALVRDiagnosticsView: View {
                 Text(viewModel.localized("alvr_app_label") + ": " + sessionManager.appName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Divider()
+                .opacity(0.35)
+
+            Button("Run Symbol Smoke Test") {
+                symbolSmokeResult = ALVRClientCoreBridge.shared.runSymbolSmokeTest()
+            }
+            .buttonStyle(.bordered)
+
+            if let symbolSmokeResult {
+                Label(
+                    symbolSmokeResult.success ? "Symbol smoke test passed" : "Symbol smoke test failed",
+                    systemImage: symbolSmokeResult.success ? "checkmark.circle.fill" : "xmark.octagon.fill"
+                )
+                .font(.caption)
+
+                ForEach(symbolSmokeResult.messages, id: \.self) { message in
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let pathId = symbolSmokeResult.pathId {
+                    Text("Path ID: \(pathId)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorDescription = symbolSmokeResult.errorDescription {
+                    Text(errorDescription)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
