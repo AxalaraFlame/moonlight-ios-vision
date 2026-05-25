@@ -72,6 +72,28 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
     @Published private(set) var maxBufferSize: UInt64?
     @Published private(set) var firstFramePrefixHex: String?
     @Published private(set) var lastFramePrefixHex: String?
+    @Published private(set) var nalScanEnabled = true
+    @Published private(set) var codecGuess = "unknown"
+    @Published private(set) var nalUnitCount = 0
+    @Published private(set) var hevcVpsCount = 0
+    @Published private(set) var hevcSpsCount = 0
+    @Published private(set) var hevcPpsCount = 0
+    @Published private(set) var hevcTrailCount = 0
+    @Published private(set) var hevcNonIdrCount = 0
+    @Published private(set) var hevcSliceCount = 0
+    @Published private(set) var hevcIdrCount = 0
+    @Published private(set) var hevcCraCount = 0
+    @Published private(set) var h264SpsCount = 0
+    @Published private(set) var h264PpsCount = 0
+    @Published private(set) var h264IdrCount = 0
+    @Published private(set) var h264NonIdrCount = 0
+    @Published private(set) var seiCount = 0
+    @Published private(set) var firstNalTypes: [String] = []
+    @Published private(set) var hasParameterSets = false
+    @Published private(set) var hasIdr = false
+    @Published private(set) var parameterSetsReady = false
+    @Published private(set) var videoToolboxReady = false
+    @Published private(set) var missingDecoderPrerequisites: [String] = []
     @Published private(set) var requiresAppRestart = false
     @Published private(set) var messages: [String] = []
     @Published private(set) var errorMessage: String?
@@ -207,6 +229,28 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         maxBufferSize = nil
         firstFramePrefixHex = nil
         lastFramePrefixHex = nil
+        nalScanEnabled = true
+        codecGuess = "unknown"
+        nalUnitCount = 0
+        hevcVpsCount = 0
+        hevcSpsCount = 0
+        hevcPpsCount = 0
+        hevcTrailCount = 0
+        hevcNonIdrCount = 0
+        hevcSliceCount = 0
+        hevcIdrCount = 0
+        hevcCraCount = 0
+        h264SpsCount = 0
+        h264PpsCount = 0
+        h264IdrCount = 0
+        h264NonIdrCount = 0
+        seiCount = 0
+        firstNalTypes = []
+        hasParameterSets = false
+        hasIdr = false
+        parameterSetsReady = false
+        videoToolboxReady = false
+        missingDecoderPrerequisites = []
         requiresAppRestart = false
         messages = []
         errorMessage = nil
@@ -235,6 +279,28 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         maxBufferSize = snapshot.maxBufferSize
         firstFramePrefixHex = snapshot.firstFramePrefixHex
         lastFramePrefixHex = snapshot.lastFramePrefixHex
+        nalScanEnabled = snapshot.nalScanEnabled
+        codecGuess = snapshot.codecGuess
+        nalUnitCount = snapshot.nalUnitCount
+        hevcVpsCount = snapshot.hevcVpsCount
+        hevcSpsCount = snapshot.hevcSpsCount
+        hevcPpsCount = snapshot.hevcPpsCount
+        hevcTrailCount = snapshot.hevcTrailCount
+        hevcNonIdrCount = snapshot.hevcNonIdrCount
+        hevcSliceCount = snapshot.hevcSliceCount
+        hevcIdrCount = snapshot.hevcIdrCount
+        hevcCraCount = snapshot.hevcCraCount
+        h264SpsCount = snapshot.h264SpsCount
+        h264PpsCount = snapshot.h264PpsCount
+        h264IdrCount = snapshot.h264IdrCount
+        h264NonIdrCount = snapshot.h264NonIdrCount
+        seiCount = snapshot.seiCount
+        firstNalTypes = snapshot.firstNalTypes
+        hasParameterSets = snapshot.hasParameterSets
+        hasIdr = snapshot.hasIdr
+        parameterSetsReady = snapshot.parameterSetsReady
+        videoToolboxReady = snapshot.videoToolboxReady
+        missingDecoderPrerequisites = snapshot.missingDecoderPrerequisites
     }
 
     var canReadDecoderConfigSnapshot: Bool {

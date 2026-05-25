@@ -69,6 +69,28 @@ struct ALVRDecoderMetadataSnapshot: Sendable {
     let maxBufferSize: UInt64?
     let firstFramePrefixHex: String?
     let lastFramePrefixHex: String?
+    let nalScanEnabled: Bool
+    let codecGuess: String
+    let nalUnitCount: Int
+    let hevcVpsCount: Int
+    let hevcSpsCount: Int
+    let hevcPpsCount: Int
+    let hevcTrailCount: Int
+    let hevcNonIdrCount: Int
+    let hevcSliceCount: Int
+    let hevcIdrCount: Int
+    let hevcCraCount: Int
+    let h264SpsCount: Int
+    let h264PpsCount: Int
+    let h264IdrCount: Int
+    let h264NonIdrCount: Int
+    let seiCount: Int
+    let firstNalTypes: [String]
+    let hasParameterSets: Bool
+    let hasIdr: Bool
+    let parameterSetsReady: Bool
+    let videoToolboxReady: Bool
+    let missingDecoderPrerequisites: [String]
     let messages: [String]
 }
 
@@ -96,6 +118,28 @@ struct ALVRDecoderMetadataScanResult: Sendable {
     let maxBufferSize: UInt64?
     let firstFramePrefixHex: String?
     let lastFramePrefixHex: String?
+    let nalScanEnabled: Bool
+    let codecGuess: String
+    let nalUnitCount: Int
+    let hevcVpsCount: Int
+    let hevcSpsCount: Int
+    let hevcPpsCount: Int
+    let hevcTrailCount: Int
+    let hevcNonIdrCount: Int
+    let hevcSliceCount: Int
+    let hevcIdrCount: Int
+    let hevcCraCount: Int
+    let h264SpsCount: Int
+    let h264PpsCount: Int
+    let h264IdrCount: Int
+    let h264NonIdrCount: Int
+    let seiCount: Int
+    let firstNalTypes: [String]
+    let hasParameterSets: Bool
+    let hasIdr: Bool
+    let parameterSetsReady: Bool
+    let videoToolboxReady: Bool
+    let missingDecoderPrerequisites: [String]
     let noFramesReceivedMessage: String?
     let durationMilliseconds: Int
     let lastStep: String
@@ -104,6 +148,24 @@ struct ALVRDecoderMetadataScanResult: Sendable {
 
 #if canImport(ALVRClientCore)
 final class ALVRDecoderMetadataCollector: @unchecked Sendable {
+    private struct NalScanResult {
+        var nalUnitCount = 0
+        var hevcVpsCount = 0
+        var hevcSpsCount = 0
+        var hevcPpsCount = 0
+        var hevcTrailCount = 0
+        var hevcNonIdrCount = 0
+        var hevcSliceCount = 0
+        var hevcIdrCount = 0
+        var hevcCraCount = 0
+        var h264SpsCount = 0
+        var h264PpsCount = 0
+        var h264IdrCount = 0
+        var h264NonIdrCount = 0
+        var seiCount = 0
+        var firstNalTypes: [String] = []
+    }
+
     private let lock = NSLock()
     private var isActive = false
     private var frameCount = 0
@@ -113,6 +175,21 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
     private var maxBufferSize: UInt64?
     private var firstFramePrefixHex: String?
     private var lastFramePrefixHex: String?
+    private var nalUnitCount = 0
+    private var hevcVpsCount = 0
+    private var hevcSpsCount = 0
+    private var hevcPpsCount = 0
+    private var hevcTrailCount = 0
+    private var hevcNonIdrCount = 0
+    private var hevcSliceCount = 0
+    private var hevcIdrCount = 0
+    private var hevcCraCount = 0
+    private var h264SpsCount = 0
+    private var h264PpsCount = 0
+    private var h264IdrCount = 0
+    private var h264NonIdrCount = 0
+    private var seiCount = 0
+    private var firstNalTypes: [String] = []
     private var messages: [String] = []
 
     func reset() {
@@ -127,6 +204,21 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
         maxBufferSize = nil
         firstFramePrefixHex = nil
         lastFramePrefixHex = nil
+        nalUnitCount = 0
+        hevcVpsCount = 0
+        hevcSpsCount = 0
+        hevcPpsCount = 0
+        hevcTrailCount = 0
+        hevcNonIdrCount = 0
+        hevcSliceCount = 0
+        hevcIdrCount = 0
+        hevcCraCount = 0
+        h264SpsCount = 0
+        h264PpsCount = 0
+        h264IdrCount = 0
+        h264NonIdrCount = 0
+        seiCount = 0
+        firstNalTypes = []
         messages = []
     }
 
@@ -150,6 +242,7 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
         let bufferSize = frameData.buffer_size
         let timestamp = frameData.timestamp_ns
         let prefixHex = Self.prefixHex(bufferPointer: frameData.buffer_ptr, bufferSize: bufferSize)
+        let nalScanResult = Self.scanNalUnits(bufferPointer: frameData.buffer_ptr, bufferSize: bufferSize)
 
         lock.lock()
         defer { lock.unlock() }
@@ -168,6 +261,24 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
             firstFramePrefixHex = prefixHex
         }
         lastFramePrefixHex = prefixHex
+        nalUnitCount += nalScanResult.nalUnitCount
+        hevcVpsCount += nalScanResult.hevcVpsCount
+        hevcSpsCount += nalScanResult.hevcSpsCount
+        hevcPpsCount += nalScanResult.hevcPpsCount
+        hevcTrailCount += nalScanResult.hevcTrailCount
+        hevcNonIdrCount += nalScanResult.hevcNonIdrCount
+        hevcSliceCount += nalScanResult.hevcSliceCount
+        hevcIdrCount += nalScanResult.hevcIdrCount
+        hevcCraCount += nalScanResult.hevcCraCount
+        h264SpsCount += nalScanResult.h264SpsCount
+        h264PpsCount += nalScanResult.h264PpsCount
+        h264IdrCount += nalScanResult.h264IdrCount
+        h264NonIdrCount += nalScanResult.h264NonIdrCount
+        seiCount += nalScanResult.seiCount
+
+        for nalType in nalScanResult.firstNalTypes where firstNalTypes.count < 16 {
+            firstNalTypes.append(nalType)
+        }
 
         if bufferSize == 0 {
             messages.append("Received zero-byte decoder frame at \(timestamp)")
@@ -180,6 +291,43 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
+        let hasHevcSignals = hevcVpsCount > 0 || hevcSpsCount > 0 || hevcPpsCount > 0 || hevcIdrCount > 0 || hevcCraCount > 0 || hevcSliceCount > 0
+        let hasH264Signals = h264SpsCount > 0 || h264PpsCount > 0 || h264IdrCount > 0 || h264NonIdrCount > 0
+        let hevcParameterSetsReady = hevcVpsCount > 0 && hevcSpsCount > 0 && hevcPpsCount > 0
+        let h264ParameterSetsReady = h264SpsCount > 0 && h264PpsCount > 0
+        var missingDecoderPrerequisites: [String] = []
+        let codecGuess: String
+        if hasHevcSignals && hasH264Signals {
+            codecGuess = "mixed/ambiguous"
+            if !hevcParameterSetsReady {
+                missingDecoderPrerequisites.append("HEVC VPS/SPS/PPS not found")
+            }
+            if !h264ParameterSetsReady {
+                missingDecoderPrerequisites.append("H264 SPS/PPS not found")
+            }
+        } else if hasHevcSignals {
+            codecGuess = "hevc"
+            if !hevcParameterSetsReady {
+                missingDecoderPrerequisites.append("HEVC VPS/SPS/PPS not found")
+            }
+        } else if hasH264Signals {
+            codecGuess = "h264"
+            if !h264ParameterSetsReady {
+                missingDecoderPrerequisites.append("H264 SPS/PPS not found")
+            }
+        } else {
+            codecGuess = "unknown"
+            missingDecoderPrerequisites.append("No H264 or HEVC parameter sets or slices found")
+        }
+        let parameterSetsReady: Bool
+        if codecGuess == "hevc" {
+            parameterSetsReady = hevcParameterSetsReady
+        } else if codecGuess == "h264" {
+            parameterSetsReady = h264ParameterSetsReady
+        } else {
+            parameterSetsReady = false
+        }
+
         return ALVRDecoderMetadataSnapshot(
             frameCount: frameCount,
             totalBytes: totalBytes,
@@ -188,6 +336,28 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
             maxBufferSize: maxBufferSize,
             firstFramePrefixHex: firstFramePrefixHex,
             lastFramePrefixHex: lastFramePrefixHex,
+            nalScanEnabled: true,
+            codecGuess: codecGuess,
+            nalUnitCount: nalUnitCount,
+            hevcVpsCount: hevcVpsCount,
+            hevcSpsCount: hevcSpsCount,
+            hevcPpsCount: hevcPpsCount,
+            hevcTrailCount: hevcTrailCount,
+            hevcNonIdrCount: hevcNonIdrCount,
+            hevcSliceCount: hevcSliceCount,
+            hevcIdrCount: hevcIdrCount,
+            hevcCraCount: hevcCraCount,
+            h264SpsCount: h264SpsCount,
+            h264PpsCount: h264PpsCount,
+            h264IdrCount: h264IdrCount,
+            h264NonIdrCount: h264NonIdrCount,
+            seiCount: seiCount,
+            firstNalTypes: firstNalTypes,
+            hasParameterSets: parameterSetsReady,
+            hasIdr: hevcIdrCount > 0 || hevcCraCount > 0 || h264IdrCount > 0,
+            parameterSetsReady: parameterSetsReady,
+            videoToolboxReady: parameterSetsReady,
+            missingDecoderPrerequisites: missingDecoderPrerequisites,
             messages: messages
         )
     }
@@ -206,6 +376,122 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
         }
 
         return parts.joined(separator: " ")
+    }
+
+    private static func scanNalUnits(bufferPointer: UnsafePointer<UInt8>?, bufferSize: UInt64) -> NalScanResult {
+        guard let bufferPointer, bufferSize >= 4 else {
+            return NalScanResult()
+        }
+
+        let scanLimit = min(Int(bufferSize), 256 * 1024)
+        var result = NalScanResult()
+        var index = 0
+
+        while index + 4 < scanLimit {
+            let startCodeLength: Int
+            if bufferPointer.advanced(by: index).pointee == 0,
+               bufferPointer.advanced(by: index + 1).pointee == 0,
+               bufferPointer.advanced(by: index + 2).pointee == 1 {
+                startCodeLength = 3
+            } else if index + 4 < scanLimit,
+                      bufferPointer.advanced(by: index).pointee == 0,
+                      bufferPointer.advanced(by: index + 1).pointee == 0,
+                      bufferPointer.advanced(by: index + 2).pointee == 0,
+                      bufferPointer.advanced(by: index + 3).pointee == 1 {
+                startCodeLength = 4
+            } else {
+                index += 1
+                continue
+            }
+
+            let nalHeaderIndex = index + startCodeLength
+            guard nalHeaderIndex < scanLimit else {
+                break
+            }
+
+            let headerByte = bufferPointer.advanced(by: nalHeaderIndex).pointee
+            recordNalHeader(headerByte, into: &result)
+            index = nalHeaderIndex + 1
+        }
+
+        return result
+    }
+
+    private static func recordNalHeader(_ headerByte: UInt8, into result: inout NalScanResult) {
+        let hevcNalType = Int((headerByte & 0x7E) >> 1)
+        let h264NalType = Int(headerByte & 0x1F)
+        let looksLikeCommonHevcHeader = (headerByte & 0x01) == 0
+        var labels: [String] = []
+
+        result.nalUnitCount += 1
+
+        if looksLikeCommonHevcHeader {
+            switch hevcNalType {
+            case 32:
+                result.hevcVpsCount += 1
+                labels.append("HEVC_VPS(32)")
+            case 33:
+                result.hevcSpsCount += 1
+                labels.append("HEVC_SPS(33)")
+            case 34:
+                result.hevcPpsCount += 1
+                labels.append("HEVC_PPS(34)")
+            case 19:
+                result.hevcIdrCount += 1
+                labels.append("HEVC_IDR_W_RADL(19)")
+            case 20:
+                result.hevcIdrCount += 1
+                labels.append("HEVC_IDR_N_LP(20)")
+            case 21:
+                result.hevcCraCount += 1
+                labels.append("HEVC_CRA(21)")
+            case 39:
+                result.seiCount += 1
+                labels.append("HEVC_PREFIX_SEI(39)")
+            case 40:
+                result.seiCount += 1
+                labels.append("HEVC_SUFFIX_SEI(40)")
+            case 0, 1:
+                result.hevcTrailCount += 1
+                result.hevcNonIdrCount += 1
+                result.hevcSliceCount += 1
+                labels.append("HEVC_TRAIL(\(hevcNalType))")
+            case 2...9:
+                result.hevcNonIdrCount += 1
+                result.hevcSliceCount += 1
+                labels.append("HEVC_SLICE(\(hevcNalType))")
+            default:
+                break
+            }
+        }
+
+        switch h264NalType {
+        case 7:
+            result.h264SpsCount += 1
+            labels.append("H264_SPS(7)")
+        case 8:
+            result.h264PpsCount += 1
+            labels.append("H264_PPS(8)")
+        case 5:
+            result.h264IdrCount += 1
+            labels.append("H264_IDR(5)")
+        case 1:
+            result.h264NonIdrCount += 1
+            labels.append("H264_NON_IDR(1)")
+        case 6:
+            result.seiCount += 1
+            labels.append("H264_SEI(6)")
+        default:
+            break
+        }
+
+        if labels.isEmpty {
+            labels.append("HEVC_\(hevcNalType)/H264_\(h264NalType)")
+        }
+
+        if result.firstNalTypes.count < 16 {
+            result.firstNalTypes.append(labels.joined(separator: " | "))
+        }
     }
 }
 
@@ -545,6 +831,28 @@ final class ALVRClientCoreBridge {
                 maxBufferSize: nil,
                 firstFramePrefixHex: nil,
                 lastFramePrefixHex: nil,
+                nalScanEnabled: true,
+                codecGuess: "unknown",
+                nalUnitCount: 0,
+                hevcVpsCount: 0,
+                hevcSpsCount: 0,
+                hevcPpsCount: 0,
+                hevcTrailCount: 0,
+                hevcNonIdrCount: 0,
+                hevcSliceCount: 0,
+                hevcIdrCount: 0,
+                hevcCraCount: 0,
+                h264SpsCount: 0,
+                h264PpsCount: 0,
+                h264IdrCount: 0,
+                h264NonIdrCount: 0,
+                seiCount: 0,
+                firstNalTypes: [],
+                hasParameterSets: false,
+                hasIdr: false,
+                parameterSetsReady: false,
+                videoToolboxReady: false,
+                missingDecoderPrerequisites: [],
                 noFramesReceivedMessage: nil,
                 durationMilliseconds: 0,
                 lastStep: "Already running",
@@ -585,6 +893,28 @@ final class ALVRClientCoreBridge {
             maxBufferSize: nil,
             firstFramePrefixHex: nil,
             lastFramePrefixHex: nil,
+            nalScanEnabled: true,
+            codecGuess: "unknown",
+            nalUnitCount: 0,
+            hevcVpsCount: 0,
+            hevcSpsCount: 0,
+            hevcPpsCount: 0,
+            hevcTrailCount: 0,
+            hevcNonIdrCount: 0,
+            hevcSliceCount: 0,
+            hevcIdrCount: 0,
+            hevcCraCount: 0,
+            h264SpsCount: 0,
+            h264PpsCount: 0,
+            h264IdrCount: 0,
+            h264NonIdrCount: 0,
+            seiCount: 0,
+            firstNalTypes: [],
+            hasParameterSets: false,
+            hasIdr: false,
+            parameterSetsReady: false,
+            videoToolboxReady: false,
+            missingDecoderPrerequisites: [],
             noFramesReceivedMessage: nil,
             durationMilliseconds: 0,
             lastStep: "ALVRClientCore unavailable",
@@ -875,6 +1205,28 @@ final class ALVRClientCoreBridge {
             maxBufferSize: snapshot.maxBufferSize,
             firstFramePrefixHex: snapshot.firstFramePrefixHex,
             lastFramePrefixHex: snapshot.lastFramePrefixHex,
+            nalScanEnabled: snapshot.nalScanEnabled,
+            codecGuess: snapshot.codecGuess,
+            nalUnitCount: snapshot.nalUnitCount,
+            hevcVpsCount: snapshot.hevcVpsCount,
+            hevcSpsCount: snapshot.hevcSpsCount,
+            hevcPpsCount: snapshot.hevcPpsCount,
+            hevcTrailCount: snapshot.hevcTrailCount,
+            hevcNonIdrCount: snapshot.hevcNonIdrCount,
+            hevcSliceCount: snapshot.hevcSliceCount,
+            hevcIdrCount: snapshot.hevcIdrCount,
+            hevcCraCount: snapshot.hevcCraCount,
+            h264SpsCount: snapshot.h264SpsCount,
+            h264PpsCount: snapshot.h264PpsCount,
+            h264IdrCount: snapshot.h264IdrCount,
+            h264NonIdrCount: snapshot.h264NonIdrCount,
+            seiCount: snapshot.seiCount,
+            firstNalTypes: snapshot.firstNalTypes,
+            hasParameterSets: snapshot.hasParameterSets,
+            hasIdr: snapshot.hasIdr,
+            parameterSetsReady: snapshot.parameterSetsReady,
+            videoToolboxReady: snapshot.videoToolboxReady,
+            missingDecoderPrerequisites: snapshot.missingDecoderPrerequisites,
             noFramesReceivedMessage: noFramesReceivedMessage,
             durationMilliseconds: Int(Date().timeIntervalSince(startDate) * 1000),
             lastStep: lastStep,
