@@ -32,6 +32,8 @@
 		A9D001132FABC10100AAA001 /* ALVRImmersiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001232FABC10100AAA001 /* ALVRImmersiveView.swift */; };
 		A9D001142FABC10100AAA001 /* ALVRRendererContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001242FABC10100AAA001 /* ALVRRendererContainerView.swift */; };
 		A9D001152FABC10100AAA001 /* ALVRDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */; };
+		A9D003102FABC30100AAA001 /* ALVRClientCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */; };
+		A9D003112FABC30100AAA001 /* ALVRClientCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3E265EDC2F9D5BCA00B0A566 /* AUSpatialMixer.m in Sources */ = {isa = PBXBuildFile; fileRef = 3E265ED12F9D5BCA00B0A566 /* AUSpatialMixer.m */; };
 		3E265EDD2F9D5BCA00B0A566 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 3E265EDA2F9D5BCA00B0A566 /* TPCircularBuffer.c */; };
 		3E265EDE2F9D5BCA00B0A566 /* AVSync.m in Sources */ = {isa = PBXBuildFile; fileRef = 3E265ED32F9D5BCA00B0A566 /* AVSync.m */; };
@@ -316,6 +318,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
+				A9D003112FABC30100AAA001 /* ALVRClientCore.xcframework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -347,6 +350,7 @@
 		A9D002222FABC20100AAA001 /* ALVRVideoBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRVideoBridge.swift; sourceTree = "<group>"; };
 		A9D002232FABC20100AAA001 /* ALVRRendererBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRRendererBridge.swift; sourceTree = "<group>"; };
 		A9D002242FABC20100AAA001 /* ALVRInputBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRInputBridge.swift; sourceTree = "<group>"; };
+		A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ALVRClientCore.xcframework; path = ThirdParty/alvr-visionos/ALVRClient/ALVRClientCore.xcframework; sourceTree = "<group>"; };
 		3E0863FF2ECD6BB7006549CB /* Moonlight XrOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Moonlight XrOS.entitlements"; sourceTree = "<group>"; };
 		3E265ECC2F9D5BCA00B0A566 /* AllocatedAudioBufferList.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AllocatedAudioBufferList.h; sourceTree = "<group>"; };
 		3E265ECD2F9D5BCA00B0A566 /* AllocatedAudioBufferList.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AllocatedAudioBufferList.m; sourceTree = "<group>"; };
@@ -645,6 +649,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F7A1193F2B5DDF73001E8686 /* libxml2.tbd in Frameworks */,
+				A9D003102FABC30100AAA001 /* ALVRClientCore.xcframework in Frameworks */,
 				F7A119402B5DDF73001E8686 /* libmoonlight-common.a in Frameworks */,
 				F7A119432B5DDF73001E8686 /* CoreGraphics.framework in Frameworks */,
 				F7A119442B5DDF73001E8686 /* CoreData.framework in Frameworks */,
@@ -946,6 +951,7 @@
 		FB290CF019B2C406004C83CF /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */,
 				F7A11A1F2B5DF46B001E8686 /* RealityKit.framework */,
 				F7A11A1D2B5DF457001E8686 /* UIKit.framework */,
 				98882A032AF60F5300C5A11C /* libavcodec.a */,
@@ -1796,6 +1802,8 @@
 					"$(PROJECT_DIR)/moonlight-common/moonlight-common-c/src",
 					"$(SDKROOT)/usr/include/libxml2/**",
 					"$(PROJECT_DIR)/libs/**",
+					"$(PROJECT_DIR)/ThirdParty/alvr-visionos/ALVRClient/ALVRClientCore.xcframework/xros-arm64/ALVRClientCore.framework/Headers",
+					"$(PROJECT_DIR)/ThirdParty/alvr-visionos/ALVRClient/ALVRClientCore.xcframework/xros-arm64-simulator/ALVRClientCore.framework/Headers",
 				);
 				INFOPLIST_FILE = "Moonlight copy-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
@@ -1845,6 +1853,11 @@
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				OTHER_SWIFT_FLAGS = (
+					"$(inherited)",
+					"-Xcc",
+					"-fmodule-map-file=$(PROJECT_DIR)/Moonlight\\ Vision/XRStreaming/ALVR/ALVRBridge/ALVRClientCore.modulemap",
+				);
 				SWIFT_OBJC_BRIDGING_HEADER = "Limelight/Input/Moonlight-Bridging-Header.h";
 				SWIFT_OBJC_INTERFACE_HEADER_NAME = "Moonlight-Swift.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -1877,6 +1890,8 @@
 					"$(PROJECT_DIR)/moonlight-common/moonlight-common-c/src",
 					"$(SDKROOT)/usr/include/libxml2/**",
 					"$(PROJECT_DIR)/libs/**",
+					"$(PROJECT_DIR)/ThirdParty/alvr-visionos/ALVRClient/ALVRClientCore.xcframework/xros-arm64/ALVRClientCore.framework/Headers",
+					"$(PROJECT_DIR)/ThirdParty/alvr-visionos/ALVRClient/ALVRClientCore.xcframework/xros-arm64-simulator/ALVRClientCore.framework/Headers",
 				);
 				INFOPLIST_FILE = "Moonlight copy-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.games";
@@ -1927,6 +1942,11 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				OTHER_SWIFT_FLAGS = (
+					"$(inherited)",
+					"-Xcc",
+					"-fmodule-map-file=$(PROJECT_DIR)/Moonlight\\ Vision/XRStreaming/ALVR/ALVRBridge/ALVRClientCore.modulemap",
+				);
 				SWIFT_OBJC_BRIDGING_HEADER = "Limelight/Input/Moonlight-Bridging-Header.h";
 				SWIFT_OBJC_INTERFACE_HEADER_NAME = "Moonlight-Swift.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";

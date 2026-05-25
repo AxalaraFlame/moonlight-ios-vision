@@ -1,0 +1,4 @@
+module ALVRClientCore [system] {
+    umbrella header "ALVRClientCoreUmbrella.h"
+    export *
+}

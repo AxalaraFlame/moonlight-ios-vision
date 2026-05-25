@@ -23,6 +23,14 @@ final class ALVRClientCoreBridge {
         #endif
     }
 
+    var frameworkStatusDescription: String {
+        #if canImport(ALVRClientCore)
+        "ALVRClientCore import: available"
+        #else
+        "ALVRClientCore import: unavailable"
+        #endif
+    }
+
     private init() {}
 
     func initializePlaceholder() {

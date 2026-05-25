@@ -28,7 +28,7 @@ struct ALVRRendererContainerView: View {
             VStack(spacing: 8) {
                 Text("ALVR Renderer Placeholder")
                     .font(.headline)
-                Text("ALVRClientCore linked: \(ALVRClientCoreBridge.shared.isFrameworkAvailable ? "true" : "false")")
+                Text(ALVRClientCoreBridge.shared.frameworkStatusDescription)
                     .font(.caption)
                 Text("State: \(sessionManager.state.description)")
                     .font(.caption)
