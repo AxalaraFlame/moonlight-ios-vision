@@ -11,6 +11,7 @@ struct ALVRDiagnosticsView: View {
     @EnvironmentObject private var viewModel: MainViewModel
     @ObservedObject private var sessionManager = ALVRSessionManager.shared
     @State private var symbolSmokeResult: SymbolSmokeResult?
+    @State private var lifecycleSmokeResult: LifecycleSmokeResult?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -57,6 +58,49 @@ struct ALVRDiagnosticsView: View {
                 }
 
                 if let errorDescription = symbolSmokeResult.errorDescription {
+                    Text(errorDescription)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
+            }
+
+            Button("Run Lifecycle Smoke Test") {
+                lifecycleSmokeResult = ALVRClientCoreBridge.shared.runLifecycleSmokeTest()
+            }
+            .buttonStyle(.bordered)
+
+            if let lifecycleSmokeResult {
+                Label(
+                    lifecycleSmokeResult.success ? "Lifecycle smoke test passed" : "Lifecycle smoke test failed",
+                    systemImage: lifecycleSmokeResult.success ? "checkmark.circle.fill" : "xmark.octagon.fill"
+                )
+                .font(.caption)
+
+                Text("Initialized: \(lifecycleSmokeResult.didInitialize ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Polled event: \(lifecycleSmokeResult.didPollEvent ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Has event: \(lifecycleSmokeResult.hasEvent ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if let eventTagRawValue = lifecycleSmokeResult.eventTagRawValue {
+                    Text("Event tag: \(eventTagRawValue)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Text("Destroyed: \(lifecycleSmokeResult.didDestroy ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                ForEach(lifecycleSmokeResult.messages, id: \.self) { message in
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorDescription = lifecycleSmokeResult.errorDescription {
                     Text(errorDescription)
                         .font(.caption2)
                         .foregroundStyle(.red)
