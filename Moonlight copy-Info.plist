@@ -43,6 +43,10 @@
 			<key>ProfileName</key>
 			<string>DirectionalGamepad</string>
 		</dict>
+		<dict>
+			<key>ProfileName</key>
+			<string>SpatialGamepad</string>
+		</dict>
 	</array>
 	<key>GCSupportsControllerUserInteraction</key>
 	<true/>
@@ -66,6 +70,8 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>This app uses the local network to discover and connect to Moonlight and ALVR / SteamVR streaming hosts.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app may access the microphone for ALVR headset microphone streaming when enabled in ALVR Streamer.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
