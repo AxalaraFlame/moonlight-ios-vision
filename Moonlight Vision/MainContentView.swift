@@ -11,6 +11,12 @@
 
 import SwiftUI
 
+private enum MainTab: Hashable {
+    case computers
+    case vr
+    case settings
+}
+
 struct MainContentView: View {
     @EnvironmentObject private var viewModel: MainViewModel
     @Environment(\.dismissWindow) private var dismissWindow
@@ -20,6 +26,7 @@ struct MainContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var selectedHost: TemporaryHost?
+    @State private var selectedMainTab: MainTab = .computers
 
     @State private var addingHost = false
     @State private var isDeletingHost = false
@@ -31,7 +38,7 @@ struct MainContentView: View {
 
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedMainTab) {
             NavigationSplitView {
                 VStack { // Wrap List and text in a VStack
                     List(viewModel.hostsWithPairState, selection: $selectedHost) { host in
@@ -54,11 +61,6 @@ struct MainContentView: View {
                         }
                     }
                     .navigationTitle(viewModel.localized("computers"))
-                    Text(viewModel.localized("please_read_changelog"))
-                        .font(.system(size: 10)) // Even smaller font size for the second line
-                        .foregroundColor(.gray)
-                        .padding(.bottom) // Add bottom padding for visual spacing
-
                     Button { // Make the Text a Button
                         isRefreshingDiscovery.toggle()
                         if isRefreshingDiscovery {
@@ -167,7 +169,7 @@ struct MainContentView: View {
                 if showDeletionTriggeredMessage {
                     Text(viewModel.localized("host_deletion_triggered"))
                 }
-                else if let selectedHost = Binding<TemporaryHost>($selectedHost) {
+                else if selectedHost != nil {
                     ComputerViewWrapper(selectedHost: $selectedHost)
                         .environmentObject(viewModel)
                 } else {
@@ -180,6 +182,7 @@ struct MainContentView: View {
             }.tabItem {
                 Label(viewModel.localized("computers"), systemImage: "desktopcomputer")
             }
+            .tag(MainTab.computers)
             .task {
                 viewModel.loadSavedHosts()
             }
@@ -237,18 +240,32 @@ struct MainContentView: View {
                 NotificationCenter.default.removeObserver(self)
             }
 
+            NavigationStack {
+                ScrollView {
+                    VRPlaceholderView()
+                        .frame(maxWidth: 760, alignment: .leading)
+                        .padding(.horizontal, 48)
+                        .padding(.vertical, 28)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+                .navigationTitle("VR")
+            }
+            .tabItem {
+                Label("VR", systemImage: "visionpro")
+            }
+            .tag(MainTab.vr)
+
             SettingsView(settings: $viewModel.streamSettings)
                 .environmentObject(viewModel)
                 .tabItem {
                     Label(viewModel.localized("settings"), systemImage: "gear")
                 }
-
-            UpdatesView()
-                .environmentObject(viewModel)
-                .tabItem {
-                    Label(viewModel.localized("changelog"), systemImage: "info.circle.fill")
-                }
-
+                .tag(MainTab.settings)
+        }
+        .onChange(of: selectedMainTab) { _, newValue in
+            if newValue == .vr {
+                print("[VR Tab] selected")
+            }
         }
         .sheet(isPresented: $viewModel.showLanguagePrompt) {
             LanguagePromptView()
@@ -329,6 +346,91 @@ struct MainContentView: View {
           }
       }
 
+}
+
+private struct VRPlaceholderView: View {
+    @EnvironmentObject private var viewModel: MainViewModel
+    @State private var showDiagnosticsPrompt = false
+    @State private var showDiagnostics = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if showDiagnostics {
+                Button("Back to VR Home") {
+                    showDiagnostics = false
+                    showDiagnosticsPrompt = false
+                }
+                .buttonStyle(.bordered)
+
+                Text("ALVR diagnostics loaded.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ALVRConnectionView(app: nil, showsDismissButton: false)
+                    .environmentObject(viewModel)
+                    .onAppear {
+                        print("[VR Tab] rendering ALVR diagnostics branch")
+                    }
+            } else if showDiagnosticsPrompt {
+                Text("ALVR / SteamVR")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Diagnostics will load below only after you confirm.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    Button("Load Diagnostics View") {
+                        print("[VR Placeholder] Load Diagnostics View tapped")
+                        showDiagnostics = true
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Back to VR Home") {
+                        showDiagnosticsPrompt = false
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
+                Text("ALVR / SteamVR")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("PCVR Headset Client")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                Text("ALVR connects from the PC side. Open ALVR Streamer on your PC and add or discover this Vision Pro headset.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Diagnostics are disabled until you open them manually.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+
+                HStack {
+                    Button("Tap Test") {
+                        print("[VR Placeholder] Tap Test clicked")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Open ALVR Diagnostics") {
+                        print("[VR Placeholder] Open ALVR Diagnostics tapped")
+                        showDiagnosticsPrompt = true
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear {
+            print("[VR Tab] rendering placeholder branch")
+        }
+    }
 }
 
 // MARK: - Stream Routing Logic
