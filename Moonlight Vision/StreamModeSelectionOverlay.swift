@@ -20,6 +20,7 @@ struct StreamModeSelectionOverlay: View {
     let onDismiss: () -> Void
 
     @State private var selectedMode: StreamingMode = .uiKitWindow
+    private let launchModes = StreamingMode.allCases.filter { !$0.usesALVRBackend }
 
     var body: some View {
         VStack(spacing: 22) {
@@ -32,7 +33,7 @@ struct StreamModeSelectionOverlay: View {
                 .foregroundStyle(.secondary)
 
             Picker(viewModel.localized("stream_mode_picker"), selection: $selectedMode) {
-                ForEach(StreamingMode.allCases) { mode in
+                ForEach(launchModes) { mode in
                     Label(
                         viewModel.localized(mode.titleLocalizationKey),
                         systemImage: mode.iconName

@@ -17,26 +17,6 @@
 		04F5ECAC2EE3759C009FF87D /* ImmersionStyleManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F5ECAB2EE3759C009FF87D /* ImmersionStyleManager.swift */; };
 		04F5ECAF2EE37A7F009FF87D /* StandardControlPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F5ECAD2EE37A7F009FF87D /* StandardControlPanelView.swift */; };
 		04F5ECB12EE37A80009FF87D /* VolumeControlPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F5ECB02EE37A80009FF87D /* VolumeControlPanelView.swift */; };
-		A9D000102FABC00100AAA001 /* XRStreamingTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000202FABC00100AAA001 /* XRStreamingTypes.swift */; };
-		A9D000112FABC00100AAA001 /* MoonlightBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000212FABC00100AAA001 /* MoonlightBackend.swift */; };
-		A9D000122FABC00100AAA001 /* CloudXRBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000222FABC00100AAA001 /* CloudXRBackend.swift */; };
-		A9D000132FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000232FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift */; };
-		A9D002102FABC20100AAA001 /* XRStreamingBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002202FABC20100AAA001 /* XRStreamingBackend.swift */; };
-		A9D002112FABC20100AAA001 /* ALVRClientCoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002212FABC20100AAA001 /* ALVRClientCoreBridge.swift */; };
-		A9D002122FABC20100AAA001 /* ALVRVideoBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002222FABC20100AAA001 /* ALVRVideoBridge.swift */; };
-		A9D002132FABC20100AAA001 /* ALVRRendererBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002232FABC20100AAA001 /* ALVRRendererBridge.swift */; };
-		A9D002142FABC20100AAA001 /* ALVRInputBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002242FABC20100AAA001 /* ALVRInputBridge.swift */; };
-		A9D001102FABC10100AAA001 /* ALVRBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001202FABC10100AAA001 /* ALVRBackend.swift */; };
-		A9D001112FABC10100AAA001 /* ALVRSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001212FABC10100AAA001 /* ALVRSessionManager.swift */; };
-		A9D001122FABC10100AAA001 /* ALVRConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001222FABC10100AAA001 /* ALVRConnectionView.swift */; };
-		A9D001132FABC10100AAA001 /* ALVRImmersiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001232FABC10100AAA001 /* ALVRImmersiveView.swift */; };
-		A9D001142FABC10100AAA001 /* ALVRRendererContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001242FABC10100AAA001 /* ALVRRendererContainerView.swift */; };
-		A9D001152FABC10100AAA001 /* ALVRDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */; };
-		A9D004102FABC40100AAA001 /* ALVRMdnsBroadcaster.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D004202FABC40100AAA001 /* ALVRMdnsBroadcaster.swift */; };
-		A9D005102FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D005202FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift */; };
-		A9D006102FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D006202FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift */; };
-		A9D003102FABC30100AAA001 /* ALVRClientCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */; };
-		A9D003112FABC30100AAA001 /* ALVRClientCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		3E265EDC2F9D5BCA00B0A566 /* AUSpatialMixer.m in Sources */ = {isa = PBXBuildFile; fileRef = 3E265ED12F9D5BCA00B0A566 /* AUSpatialMixer.m */; };
 		3E265EDD2F9D5BCA00B0A566 /* TPCircularBuffer.c in Sources */ = {isa = PBXBuildFile; fileRef = 3E265EDA2F9D5BCA00B0A566 /* TPCircularBuffer.c */; };
 		3E265EDE2F9D5BCA00B0A566 /* AVSync.m in Sources */ = {isa = PBXBuildFile; fileRef = 3E265ED32F9D5BCA00B0A566 /* AVSync.m */; };
@@ -90,6 +70,26 @@
 		98CFB82F1CAD481B0048EF74 /* libmoonlight-common.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 98AB2E841CAD46840089BB98 /* libmoonlight-common.a */; };
 		98D585701C0ED0E800F6CC00 /* TemporarySettings.m in Sources */ = {isa = PBXBuildFile; fileRef = 98D5856F1C0ED0E800F6CC00 /* TemporarySettings.m */; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* StreamViewStubs.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A6978869504132 /* StreamViewStubs.swift */; };
+		A9D000102FABC00100AAA001 /* XRStreamingTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000202FABC00100AAA001 /* XRStreamingTypes.swift */; };
+		A9D000112FABC00100AAA001 /* MoonlightBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000212FABC00100AAA001 /* MoonlightBackend.swift */; };
+		A9D000122FABC00100AAA001 /* CloudXRBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000222FABC00100AAA001 /* CloudXRBackend.swift */; };
+		A9D000132FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D000232FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift */; };
+		A9D001102FABC10100AAA001 /* ALVRBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001202FABC10100AAA001 /* ALVRBackend.swift */; };
+		A9D001112FABC10100AAA001 /* ALVRSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001212FABC10100AAA001 /* ALVRSessionManager.swift */; };
+		A9D001122FABC10100AAA001 /* ALVRConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001222FABC10100AAA001 /* ALVRConnectionView.swift */; };
+		A9D001132FABC10100AAA001 /* ALVRImmersiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001232FABC10100AAA001 /* ALVRImmersiveView.swift */; };
+		A9D001142FABC10100AAA001 /* ALVRRendererContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001242FABC10100AAA001 /* ALVRRendererContainerView.swift */; };
+		A9D001152FABC10100AAA001 /* ALVRDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */; };
+		A9D002102FABC20100AAA001 /* XRStreamingBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002202FABC20100AAA001 /* XRStreamingBackend.swift */; };
+		A9D002112FABC20100AAA001 /* ALVRClientCoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002212FABC20100AAA001 /* ALVRClientCoreBridge.swift */; };
+		A9D002122FABC20100AAA001 /* ALVRVideoBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002222FABC20100AAA001 /* ALVRVideoBridge.swift */; };
+		A9D002132FABC20100AAA001 /* ALVRRendererBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002232FABC20100AAA001 /* ALVRRendererBridge.swift */; };
+		A9D002142FABC20100AAA001 /* ALVRInputBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D002242FABC20100AAA001 /* ALVRInputBridge.swift */; };
+		A9D003102FABC30100AAA001 /* ALVRClientCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */; };
+		A9D003112FABC30100AAA001 /* ALVRClientCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A9D004102FABC40100AAA001 /* ALVRMdnsBroadcaster.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D004202FABC40100AAA001 /* ALVRMdnsBroadcaster.swift */; };
+		A9D005102FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D005202FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift */; };
+		A9D006102FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D006202FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift */; };
 		B19362EE2D4ECDD6004F88FA /* NSData+Conversion.m in Sources */ = {isa = PBXBuildFile; fileRef = B19362ED2D4ECDCF004F88FA /* NSData+Conversion.m */; };
 		B19362EF2D4ECDD6004F88FA /* NSData+Conversion.m in Sources */ = {isa = PBXBuildFile; fileRef = B19362ED2D4ECDCF004F88FA /* NSData+Conversion.m */; };
 		B19362F02D4ECDD6004F88FA /* NSData+Conversion.m in Sources */ = {isa = PBXBuildFile; fileRef = B19362ED2D4ECDCF004F88FA /* NSData+Conversion.m */; };
@@ -338,25 +338,6 @@
 		04F5ECAB2EE3759C009FF87D /* ImmersionStyleManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImmersionStyleManager.swift; sourceTree = "<group>"; };
 		04F5ECAD2EE37A7F009FF87D /* StandardControlPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardControlPanelView.swift; sourceTree = "<group>"; };
 		04F5ECB02EE37A80009FF87D /* VolumeControlPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeControlPanelView.swift; sourceTree = "<group>"; };
-		A9D000202FABC00100AAA001 /* XRStreamingTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XRStreamingTypes.swift; sourceTree = "<group>"; };
-		A9D000212FABC00100AAA001 /* MoonlightBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonlightBackend.swift; sourceTree = "<group>"; };
-		A9D000222FABC00100AAA001 /* CloudXRBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudXRBackend.swift; sourceTree = "<group>"; };
-		A9D000232FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VRStreamingImmersiveSpaceView.swift; sourceTree = "<group>"; };
-		A9D002202FABC20100AAA001 /* XRStreamingBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XRStreamingBackend.swift; sourceTree = "<group>"; };
-		A9D001202FABC10100AAA001 /* ALVRBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRBackend.swift; sourceTree = "<group>"; };
-		A9D001212FABC10100AAA001 /* ALVRSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRSessionManager.swift; sourceTree = "<group>"; };
-		A9D001222FABC10100AAA001 /* ALVRConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRConnectionView.swift; sourceTree = "<group>"; };
-		A9D001232FABC10100AAA001 /* ALVRImmersiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRImmersiveView.swift; sourceTree = "<group>"; };
-		A9D001242FABC10100AAA001 /* ALVRRendererContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRRendererContainerView.swift; sourceTree = "<group>"; };
-		A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRDiagnosticsView.swift; sourceTree = "<group>"; };
-		A9D004202FABC40100AAA001 /* ALVRMdnsBroadcaster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRMdnsBroadcaster.swift; sourceTree = "<group>"; };
-		A9D005202FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRSessionDiagnosticsManager.swift; sourceTree = "<group>"; };
-		A9D006202FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRVideoToolboxDecoderBridge.swift; sourceTree = "<group>"; };
-		A9D002212FABC20100AAA001 /* ALVRClientCoreBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRClientCoreBridge.swift; sourceTree = "<group>"; };
-		A9D002222FABC20100AAA001 /* ALVRVideoBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRVideoBridge.swift; sourceTree = "<group>"; };
-		A9D002232FABC20100AAA001 /* ALVRRendererBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRRendererBridge.swift; sourceTree = "<group>"; };
-		A9D002242FABC20100AAA001 /* ALVRInputBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRInputBridge.swift; sourceTree = "<group>"; };
-		A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ALVRClientCore.xcframework; path = ThirdParty/alvr-visionos/ALVRClient/ALVRClientCore.xcframework; sourceTree = "<group>"; };
 		3E0863FF2ECD6BB7006549CB /* Moonlight XrOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Moonlight XrOS.entitlements"; sourceTree = "<group>"; };
 		3E265ECC2F9D5BCA00B0A566 /* AllocatedAudioBufferList.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AllocatedAudioBufferList.h; sourceTree = "<group>"; };
 		3E265ECD2F9D5BCA00B0A566 /* AllocatedAudioBufferList.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AllocatedAudioBufferList.m; sourceTree = "<group>"; };
@@ -425,6 +406,25 @@
 		98B9CE6C27B2144B00B473C4 /* AVKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVKit.framework; path = Platforms/AppleTVOS.platform/Developer/SDKs/AppleTVOS15.2.sdk/System/Library/Frameworks/AVKit.framework; sourceTree = DEVELOPER_DIR; };
 		98D5856E1C0ED0E800F6CC00 /* TemporarySettings.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TemporarySettings.h; path = Database/TemporarySettings.h; sourceTree = "<group>"; };
 		98D5856F1C0ED0E800F6CC00 /* TemporarySettings.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TemporarySettings.m; path = Database/TemporarySettings.m; sourceTree = "<group>"; };
+		A9D000202FABC00100AAA001 /* XRStreamingTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XRStreamingTypes.swift; sourceTree = "<group>"; };
+		A9D000212FABC00100AAA001 /* MoonlightBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonlightBackend.swift; sourceTree = "<group>"; };
+		A9D000222FABC00100AAA001 /* CloudXRBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudXRBackend.swift; sourceTree = "<group>"; };
+		A9D000232FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VRStreamingImmersiveSpaceView.swift; sourceTree = "<group>"; };
+		A9D001202FABC10100AAA001 /* ALVRBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRBackend.swift; sourceTree = "<group>"; };
+		A9D001212FABC10100AAA001 /* ALVRSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRSessionManager.swift; sourceTree = "<group>"; };
+		A9D001222FABC10100AAA001 /* ALVRConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRConnectionView.swift; sourceTree = "<group>"; };
+		A9D001232FABC10100AAA001 /* ALVRImmersiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRImmersiveView.swift; sourceTree = "<group>"; };
+		A9D001242FABC10100AAA001 /* ALVRRendererContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRRendererContainerView.swift; sourceTree = "<group>"; };
+		A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRDiagnosticsView.swift; sourceTree = "<group>"; };
+		A9D002202FABC20100AAA001 /* XRStreamingBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XRStreamingBackend.swift; sourceTree = "<group>"; };
+		A9D002212FABC20100AAA001 /* ALVRClientCoreBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRClientCoreBridge.swift; sourceTree = "<group>"; };
+		A9D002222FABC20100AAA001 /* ALVRVideoBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRVideoBridge.swift; sourceTree = "<group>"; };
+		A9D002232FABC20100AAA001 /* ALVRRendererBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRRendererBridge.swift; sourceTree = "<group>"; };
+		A9D002242FABC20100AAA001 /* ALVRInputBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRInputBridge.swift; sourceTree = "<group>"; };
+		A9D003202FABC30100AAA001 /* ALVRClientCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ALVRClientCore.xcframework; path = "ThirdParty/alvr-visionos/ALVRClient/ALVRClientCore.xcframework"; sourceTree = "<group>"; };
+		A9D004202FABC40100AAA001 /* ALVRMdnsBroadcaster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRMdnsBroadcaster.swift; sourceTree = "<group>"; };
+		A9D005202FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRSessionDiagnosticsManager.swift; sourceTree = "<group>"; };
+		A9D006202FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ALVRVideoToolboxDecoderBridge.swift; sourceTree = "<group>"; };
 		B19362EC2D4ECDC0004F88FA /* NSData+Conversion.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "NSData+Conversion.h"; sourceTree = "<group>"; };
 		B19362ED2D4ECDCF004F88FA /* NSData+Conversion.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSData+Conversion.m"; sourceTree = "<group>"; };
 		B1AC7CED2D4E00980013B9A3 /* HDRParsingUtils.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HDRParsingUtils.h; sourceTree = "<group>"; };
@@ -802,6 +802,47 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		A9D000302FABC00100AAA001 /* XRStreaming */ = {
+			isa = PBXGroup;
+			children = (
+				A9D001302FABC10100AAA001 /* ALVR */,
+				A9D000222FABC00100AAA001 /* CloudXRBackend.swift */,
+				A9D000212FABC00100AAA001 /* MoonlightBackend.swift */,
+				A9D000232FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift */,
+				A9D002202FABC20100AAA001 /* XRStreamingBackend.swift */,
+				A9D000202FABC00100AAA001 /* XRStreamingTypes.swift */,
+			);
+			path = XRStreaming;
+			sourceTree = "<group>";
+		};
+		A9D001302FABC10100AAA001 /* ALVR */ = {
+			isa = PBXGroup;
+			children = (
+				A9D002302FABC20100AAA001 /* ALVRBridge */,
+				A9D001202FABC10100AAA001 /* ALVRBackend.swift */,
+				A9D001222FABC10100AAA001 /* ALVRConnectionView.swift */,
+				A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */,
+				A9D001232FABC10100AAA001 /* ALVRImmersiveView.swift */,
+				A9D004202FABC40100AAA001 /* ALVRMdnsBroadcaster.swift */,
+				A9D001242FABC10100AAA001 /* ALVRRendererContainerView.swift */,
+				A9D005202FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift */,
+				A9D001212FABC10100AAA001 /* ALVRSessionManager.swift */,
+				A9D006202FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift */,
+			);
+			path = ALVR;
+			sourceTree = "<group>";
+		};
+		A9D002302FABC20100AAA001 /* ALVRBridge */ = {
+			isa = PBXGroup;
+			children = (
+				A9D002212FABC20100AAA001 /* ALVRClientCoreBridge.swift */,
+				A9D002242FABC20100AAA001 /* ALVRInputBridge.swift */,
+				A9D002232FABC20100AAA001 /* ALVRRendererBridge.swift */,
+				A9D002222FABC20100AAA001 /* ALVRVideoBridge.swift */,
+			);
+			path = ALVRBridge;
+			sourceTree = "<group>";
+		};
 		F7A119072B5DDECC001E8686 /* Moonlight iOS */ = {
 			isa = PBXGroup;
 			children = (
@@ -866,47 +907,6 @@
 				A9D000302FABC00100AAA001 /* XRStreaming */,
 			);
 			path = "Moonlight Vision";
-			sourceTree = "<group>";
-		};
-		A9D000302FABC00100AAA001 /* XRStreaming */ = {
-			isa = PBXGroup;
-			children = (
-				A9D001302FABC10100AAA001 /* ALVR */,
-				A9D000222FABC00100AAA001 /* CloudXRBackend.swift */,
-				A9D000212FABC00100AAA001 /* MoonlightBackend.swift */,
-				A9D000232FABC00100AAA001 /* VRStreamingImmersiveSpaceView.swift */,
-				A9D002202FABC20100AAA001 /* XRStreamingBackend.swift */,
-				A9D000202FABC00100AAA001 /* XRStreamingTypes.swift */,
-			);
-			path = XRStreaming;
-			sourceTree = "<group>";
-		};
-		A9D001302FABC10100AAA001 /* ALVR */ = {
-			isa = PBXGroup;
-			children = (
-				A9D002302FABC20100AAA001 /* ALVRBridge */,
-				A9D001202FABC10100AAA001 /* ALVRBackend.swift */,
-				A9D001222FABC10100AAA001 /* ALVRConnectionView.swift */,
-				A9D001252FABC10100AAA001 /* ALVRDiagnosticsView.swift */,
-				A9D001232FABC10100AAA001 /* ALVRImmersiveView.swift */,
-				A9D004202FABC40100AAA001 /* ALVRMdnsBroadcaster.swift */,
-				A9D001242FABC10100AAA001 /* ALVRRendererContainerView.swift */,
-				A9D005202FABC50100AAA001 /* ALVRSessionDiagnosticsManager.swift */,
-				A9D001212FABC10100AAA001 /* ALVRSessionManager.swift */,
-				A9D006202FABC60100AAA001 /* ALVRVideoToolboxDecoderBridge.swift */,
-			);
-			path = ALVR;
-			sourceTree = "<group>";
-		};
-		A9D002302FABC20100AAA001 /* ALVRBridge */ = {
-			isa = PBXGroup;
-			children = (
-				A9D002212FABC20100AAA001 /* ALVRClientCoreBridge.swift */,
-				A9D002242FABC20100AAA001 /* ALVRInputBridge.swift */,
-				A9D002232FABC20100AAA001 /* ALVRRendererBridge.swift */,
-				A9D002222FABC20100AAA001 /* ALVRVideoBridge.swift */,
-			);
-			path = ALVRBridge;
 			sourceTree = "<group>";
 		};
 		F7A119FE2B5DF387001E8686 /* Packages */ = {
@@ -1855,6 +1855,7 @@
 				MARKETING_VERSION = 11.0.22;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu99 gnu++11";
 				OTHER_LDFLAGS = "-ld64";
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(PROJECT_DIR)/Moonlight\\ Vision/XRStreaming/ALVR/ALVRBridge/ALVRClientCore.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.moonlight-stream-beta.Moonlight-Vision-luma";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE = "";
@@ -1865,11 +1866,6 @@
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				OTHER_SWIFT_FLAGS = (
-					"$(inherited)",
-					"-Xcc",
-					"-fmodule-map-file=$(PROJECT_DIR)/Moonlight\\ Vision/XRStreaming/ALVR/ALVRBridge/ALVRClientCore.modulemap",
-				);
 				SWIFT_OBJC_BRIDGING_HEADER = "Limelight/Input/Moonlight-Bridging-Header.h";
 				SWIFT_OBJC_INTERFACE_HEADER_NAME = "Moonlight-Swift.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -1943,6 +1939,7 @@
 				MARKETING_VERSION = 11.0.22;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu99 gnu++11";
 				OTHER_LDFLAGS = "-ld64";
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(PROJECT_DIR)/Moonlight\\ Vision/XRStreaming/ALVR/ALVRBridge/ALVRClientCore.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.moonlight-stream-beta.Moonlight-Vision-luma";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE = "";
@@ -1954,11 +1951,6 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_COMPILATION_MODE = wholemodule;
-				OTHER_SWIFT_FLAGS = (
-					"$(inherited)",
-					"-Xcc",
-					"-fmodule-map-file=$(PROJECT_DIR)/Moonlight\\ Vision/XRStreaming/ALVR/ALVRBridge/ALVRClientCore.modulemap",
-				);
 				SWIFT_OBJC_BRIDGING_HEADER = "Limelight/Input/Moonlight-Bridging-Header.h";
 				SWIFT_OBJC_INTERFACE_HEADER_NAME = "Moonlight-Swift.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -2268,8 +2260,10 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_MODULE_VERIFIER = YES;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "Limelight/Limelight-Prefix.pch";
@@ -2303,6 +2297,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "com.moonlight-stream.Moonlight";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE = "";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = NO;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OBJC_BRIDGING_HEADER = "Limelight/Input/Moonlight-Bridging-Header.h";

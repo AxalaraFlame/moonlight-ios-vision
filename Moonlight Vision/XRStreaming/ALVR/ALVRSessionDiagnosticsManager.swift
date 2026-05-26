@@ -134,6 +134,41 @@ private let alvrSessionDiagnosticsMetadataCallback: @convention(c) (AlvrVideoFra
 
 @MainActor
 final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable {
+    enum ALVRDecoderAutomationState: Equatable {
+        case idle
+        case waitingForConfig
+        case readingDecoderConfig
+        case waitingForInBandParameterSets
+        case parameterSetsReady
+        case creatingDecoder
+        case decoderReady
+        case failed(String)
+        case invalidated
+
+        var description: String {
+            switch self {
+            case .idle:
+                return "Idle"
+            case .waitingForConfig:
+                return "Waiting for decoder config"
+            case .readingDecoderConfig:
+                return "Reading decoder config"
+            case .waitingForInBandParameterSets:
+                return "Waiting for in-band parameter sets"
+            case .parameterSetsReady:
+                return "Parameter sets ready"
+            case .creatingDecoder:
+                return "Creating decoder"
+            case .decoderReady:
+                return "Decoder ready"
+            case .failed(let message):
+                return "Failed: \(message)"
+            case .invalidated:
+                return "Invalidated"
+            }
+        }
+    }
+
     enum State: Equatable {
         case idle
         case starting
@@ -165,6 +200,10 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
     @Published private(set) var eventTagNames: [String] = []
     @Published private(set) var eventTagRawValues: [UInt32] = []
     @Published private(set) var hudMessages: [String] = []
+    @Published private(set) var lastFullHudMessage: String?
+    @Published private(set) var lastFullHudMessageLength = 0
+    @Published private(set) var lastFullHudMessageIsTruncated = false
+    @Published private(set) var recentUniqueHudMessages: [String] = []
     @Published private(set) var streamingEventSeen = false
     @Published private(set) var decoderConfigEventSeen = false
     @Published private(set) var hapticsEventSeen = false
@@ -197,6 +236,15 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
     @Published private(set) var parameterSetsReady = false
     @Published private(set) var videoToolboxReady = false
     @Published private(set) var missingDecoderPrerequisites: [String] = []
+    @Published private(set) var decoderAutomationState: ALVRDecoderAutomationState = .idle
+    @Published private(set) var decoderConfigSource = "none"
+    @Published private(set) var decoderGeneration = 0
+    @Published private(set) var decoderReady = false
+    @Published private(set) var decoderCreatedAutomatically = false
+    @Published private(set) var lastDecoderAutomationMessage = "Idle"
+    @Published private(set) var lastRebuildReason = "none"
+    @Published private(set) var lastConfigSource = "none"
+    @Published private(set) var autoDecoderCreationStatus = "not attempted"
     @Published private(set) var requiresAppRestart = false
     @Published private(set) var messages: [String] = []
     @Published private(set) var errorMessage: String?
@@ -205,10 +253,24 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
     @Published private(set) var isReadingDecoderConfig = false
     @Published private(set) var videoToolboxDecoderCreationResult: ALVRVideoToolboxDecoderCreationResult?
     @Published private(set) var videoToolboxFrameFeedSummary: ALVRVideoToolboxFrameFeedSummary?
+    @Published private(set) var lifecycleWarningMessage: String?
 
     private var diagnosticsTask: Task<Void, Never>?
     private var didReadDecoderConfigSnapshot = false
     private var videoToolboxDecoderBridge: ALVRVideoToolboxDecoderBridge?
+    private static var createdInstanceCount = 0
+
+    init() {
+        Self.createdInstanceCount += 1
+        if Self.createdInstanceCount > 1 {
+            lifecycleWarningMessage = "ALVR diagnostics state was reset while the PC may still be streaming. Restart the app before running another ALVR core test."
+        }
+        print("[ALVR SessionDiagnosticsManager] init #\(Self.createdInstanceCount)")
+    }
+
+    deinit {
+        print("[ALVR SessionDiagnosticsManager] deinit")
+    }
 
     var isRunning: Bool {
         if case .running = state { return true }
@@ -388,6 +450,12 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
                 lastPixelBufferWidth: nil,
                 lastPixelBufferHeight: nil,
                 lastPixelFormat: nil,
+                lastPlaneCount: nil,
+                lastBytesPerRowByPlane: [],
+                lastHasIOSurface: nil,
+                lastIsMetalCompatible: nil,
+                lastMetalCompatibilityHint: nil,
+                hasLatestDecodedPixelBufferSnapshot: false,
                 lastDecodedTimestampNs: nil,
                 decodeErrors: ["Create a HEVC decoder skeleton while session diagnostics are running before feeding test frames."],
                 didCallAlvrReportFrameDecoded: false,
@@ -416,6 +484,10 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         eventTagNames = []
         eventTagRawValues = []
         hudMessages = []
+        lastFullHudMessage = nil
+        lastFullHudMessageLength = 0
+        lastFullHudMessageIsTruncated = false
+        recentUniqueHudMessages = []
         streamingEventSeen = false
         decoderConfigEventSeen = false
         hapticsEventSeen = false
@@ -448,6 +520,15 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         parameterSetsReady = false
         videoToolboxReady = false
         missingDecoderPrerequisites = []
+        decoderAutomationState = .waitingForConfig
+        decoderConfigSource = "none"
+        decoderGeneration += 1
+        decoderReady = false
+        decoderCreatedAutomatically = false
+        lastDecoderAutomationMessage = "Waiting for decoder config or in-band parameter sets"
+        lastRebuildReason = "sessionStart"
+        lastConfigSource = "none"
+        autoDecoderCreationStatus = "not attempted"
         requiresAppRestart = false
         messages = []
         errorMessage = nil
@@ -508,6 +589,175 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         missingDecoderPrerequisites = snapshot.missingDecoderPrerequisites
     }
 
+    private func handleAutomaticDecoderConfigSnapshot(_ snapshot: ALVRDecoderConfigSnapshot, reason: String) {
+        decoderConfigSnapshot = snapshot
+        didReadDecoderConfigSnapshot = true
+        messages.append(contentsOf: snapshot.messages)
+        lastConfigSource = "decoderConfigEvent"
+        lastRebuildReason = reason
+
+        guard snapshot.success else {
+            decoderAutomationState = .waitingForInBandParameterSets
+            decoderConfigSource = "none"
+            lastDecoderAutomationMessage = snapshot.errorDescription ?? "Decoder config snapshot failed; waiting for in-band parameter sets."
+            return
+        }
+
+        if snapshot.configCodecGuess == "hevc",
+           snapshot.parameterSetsReady,
+           snapshot.videoToolboxReady,
+           !snapshot.hevcVpsData.isEmpty,
+           !snapshot.hevcSpsData.isEmpty,
+           !snapshot.hevcPpsData.isEmpty {
+            decoderConfigSource = "decoderConfigEvent"
+            parameterSetsReady = true
+            videoToolboxReady = true
+            missingDecoderPrerequisites = []
+            attemptCreateDecoderIfReady(
+                reason: reason,
+                source: "decoderConfigEvent",
+                codec: "hevc",
+                vps: snapshot.hevcVpsData,
+                sps: snapshot.hevcSpsData,
+                pps: snapshot.hevcPpsData
+            )
+        } else if snapshot.configCodecGuess == "h264", snapshot.parameterSetsReady {
+            decoderAutomationState = .parameterSetsReady
+            decoderConfigSource = "decoderConfigEvent"
+            parameterSetsReady = true
+            videoToolboxReady = true
+            lastDecoderAutomationMessage = "H264 parameter sets are ready, but automatic H264 decoder creation is not implemented in this diagnostics path."
+            autoDecoderCreationStatus = "h264 ready, not created"
+        } else {
+            decoderAutomationState = .waitingForInBandParameterSets
+            decoderConfigSource = "decoderConfigEvent"
+            parameterSetsReady = false
+            videoToolboxReady = false
+            missingDecoderPrerequisites = snapshot.missingDecoderPrerequisites
+            lastDecoderAutomationMessage = "Decoder config did not contain complete parameter sets; waiting for in-band NAL units."
+        }
+    }
+
+    private func handleInBandParameterSetsIfReady(_ snapshot: ALVRDecoderMetadataSnapshot) {
+        guard case .running = state else {
+            return
+        }
+        guard !decoderReady else {
+            return
+        }
+        guard decoderAutomationState != .invalidated else {
+            return
+        }
+        if snapshot.codecGuess == "hevc",
+           snapshot.parameterSetsReady,
+           snapshot.videoToolboxReady,
+           !snapshot.hevcVpsData.isEmpty,
+           !snapshot.hevcSpsData.isEmpty,
+           !snapshot.hevcPpsData.isEmpty {
+            let inBandSnapshot = Self.makeInBandDecoderConfigSnapshot(
+                from: snapshot,
+                triggerReason: "inBandNalUnits"
+            )
+            decoderConfigSnapshot = inBandSnapshot
+            decoderConfigSource = "inBandNalUnits"
+            lastConfigSource = "inBandNalUnits"
+            parameterSetsReady = true
+            videoToolboxReady = true
+            missingDecoderPrerequisites = []
+            attemptCreateDecoderIfReady(
+                reason: "inBandNalUnits",
+                source: "inBandNalUnits",
+                codec: "hevc",
+                vps: snapshot.hevcVpsData,
+                sps: snapshot.hevcSpsData,
+                pps: snapshot.hevcPpsData
+            )
+        } else if snapshot.codecGuess == "h264", snapshot.parameterSetsReady {
+            decoderAutomationState = .parameterSetsReady
+            decoderConfigSource = "inBandNalUnits"
+            lastConfigSource = "inBandNalUnits"
+            parameterSetsReady = true
+            videoToolboxReady = true
+            lastDecoderAutomationMessage = "In-band H264 SPS/PPS captured, but automatic H264 decoder creation is not implemented in this diagnostics path."
+            autoDecoderCreationStatus = "h264 ready, not created"
+        } else if snapshot.frameCount > 0 {
+            decoderAutomationState = .waitingForInBandParameterSets
+            decoderConfigSource = "none"
+            parameterSetsReady = false
+            videoToolboxReady = false
+            missingDecoderPrerequisites = snapshot.missingDecoderPrerequisites
+            lastDecoderAutomationMessage = "Video frames are arriving; waiting for in-band VPS/SPS/PPS."
+        }
+    }
+
+    private func attemptCreateDecoderIfReady(
+        reason: String,
+        source: String,
+        codec: String,
+        vps: [UInt8],
+        sps: [UInt8],
+        pps: [UInt8]
+    ) {
+        guard case .running = state else {
+            lastDecoderAutomationMessage = "Session is not running; decoder creation skipped."
+            return
+        }
+
+        guard codec == "hevc", !vps.isEmpty, !sps.isEmpty, !pps.isEmpty else {
+            decoderAutomationState = .failed("HEVC VPS/SPS/PPS are not complete.")
+            decoderReady = false
+            autoDecoderCreationStatus = "failed"
+            lastDecoderAutomationMessage = "HEVC VPS/SPS/PPS are not complete."
+            return
+        }
+
+        decoderGeneration += 1
+        decoderAutomationState = .creatingDecoder
+        decoderConfigSource = source
+        lastConfigSource = source
+        lastRebuildReason = reason
+        lastDecoderAutomationMessage = "Creating HEVC decoder from \(source)."
+        autoDecoderCreationStatus = "creating"
+
+        videoToolboxDecoderBridge?.invalidate()
+
+        let bridge = ALVRVideoToolboxDecoderBridge()
+        let result = bridge.createHEVCDecoderSkeleton(vps: vps, sps: sps, pps: pps)
+        videoToolboxDecoderCreationResult = result
+        videoToolboxFrameFeedSummary = bridge.frameFeedSummarySnapshot()
+        messages.append(contentsOf: result.messages)
+
+        if result.success {
+            videoToolboxDecoderBridge = bridge
+            decoderAutomationState = .decoderReady
+            decoderReady = true
+            decoderCreatedAutomatically = true
+            parameterSetsReady = true
+            videoToolboxReady = true
+            missingDecoderPrerequisites = []
+            autoDecoderCreationStatus = "created"
+            lastDecoderAutomationMessage = "Automatic HEVC decoder skeleton created from \(source)."
+        } else {
+            bridge.invalidate()
+            videoToolboxDecoderBridge = nil
+            decoderAutomationState = .failed(result.errorDescription ?? "Failed to create HEVC decoder.")
+            decoderReady = false
+            decoderCreatedAutomatically = false
+            autoDecoderCreationStatus = "failed"
+            lastDecoderAutomationMessage = result.errorDescription ?? "Failed to create HEVC decoder."
+        }
+    }
+
+    private func invalidateCurrentDecoderForSessionEnd(reason: String) {
+        videoToolboxDecoderBridge?.invalidate()
+        videoToolboxDecoderBridge = nil
+        decoderReady = false
+        decoderAutomationState = .invalidated
+        autoDecoderCreationStatus = "invalidated"
+        lastRebuildReason = reason
+        lastDecoderAutomationMessage = "Decoder invalidated for \(reason)."
+    }
+
     var canReadDecoderConfigSnapshot: Bool {
         guard case .running = state else {
             return false
@@ -535,6 +785,9 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
     }
 
     var canCreateHEVCDecoderSkeleton: Bool {
+        guard case .running = state, !requiresAppRestart else {
+            return false
+        }
         guard let decoderConfigSnapshot else {
             return false
         }
@@ -557,6 +810,65 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         return !requiresAppRestart
             && videoToolboxDecoderCreationResult?.success == true
             && videoToolboxFrameFeedSummary?.feedEnabled != true
+    }
+
+    var hasOnlyHudMessagesWithoutStreamingPath: Bool {
+        !recentUniqueHudMessages.isEmpty
+            && !streamingEventSeen
+            && !decoderConfigEventSeen
+            && frameCount == 0
+    }
+
+    private nonisolated static func makeInBandDecoderConfigSnapshot(
+        from snapshot: ALVRDecoderMetadataSnapshot,
+        triggerReason: String
+    ) -> ALVRDecoderConfigSnapshot {
+        let parameterSetBytes = snapshot.hevcVpsData + snapshot.hevcSpsData + snapshot.hevcPpsData
+        return ALVRDecoderConfigSnapshot(
+            attempted: true,
+            success: snapshot.parameterSetsReady,
+            size: UInt64(parameterSetBytes.count),
+            prefixHex: parameterSetPrefixHex(for: parameterSetBytes, maxBytes: 64),
+            asciiPreview: nil,
+            configNalUnitCount: [
+                snapshot.hevcVpsData,
+                snapshot.hevcSpsData,
+                snapshot.hevcPpsData,
+                snapshot.h264SpsData,
+                snapshot.h264PpsData
+            ].filter { !$0.isEmpty }.count,
+            configCodecGuess: snapshot.codecGuess,
+            hevcVpsCount: snapshot.hevcVpsData.isEmpty ? 0 : 1,
+            hevcSpsCount: snapshot.hevcSpsData.isEmpty ? 0 : 1,
+            hevcPpsCount: snapshot.hevcPpsData.isEmpty ? 0 : 1,
+            h264SpsCount: snapshot.h264SpsData.isEmpty ? 0 : 1,
+            h264PpsCount: snapshot.h264PpsData.isEmpty ? 0 : 1,
+            parameterSetsReady: snapshot.parameterSetsReady,
+            videoToolboxReady: snapshot.videoToolboxReady,
+            configNalTypes: snapshot.firstNalTypes,
+            hevcVpsSize: snapshot.hevcVpsData.isEmpty ? nil : snapshot.hevcVpsData.count,
+            hevcSpsSize: snapshot.hevcSpsData.isEmpty ? nil : snapshot.hevcSpsData.count,
+            hevcPpsSize: snapshot.hevcPpsData.isEmpty ? nil : snapshot.hevcPpsData.count,
+            hevcVpsData: snapshot.hevcVpsData,
+            hevcSpsData: snapshot.hevcSpsData,
+            hevcPpsData: snapshot.hevcPpsData,
+            h264SpsSize: snapshot.h264SpsData.isEmpty ? nil : snapshot.h264SpsData.count,
+            h264PpsSize: snapshot.h264PpsData.isEmpty ? nil : snapshot.h264PpsData.count,
+            parameterSetPrefixHex: parameterSetPrefixHex(for: parameterSetBytes, maxBytes: 64),
+            missingDecoderPrerequisites: snapshot.missingDecoderPrerequisites,
+            errorDescription: snapshot.parameterSetsReady ? nil : "In-band parameter sets are incomplete.",
+            triggerReason: triggerReason,
+            messages: ["Captured decoder parameter sets from in-band NAL units."]
+        )
+    }
+
+    private nonisolated static func parameterSetPrefixHex(for bytes: [UInt8], maxBytes: Int) -> String? {
+        guard !bytes.isEmpty else {
+            return nil
+        }
+        return bytes.prefix(maxBytes)
+            .map { String(format: "%02X", $0) }
+            .joined(separator: " ")
     }
 
     #if canImport(ALVRClientCore)
@@ -839,6 +1151,10 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         var eventTagNames: [String] = []
         var eventTagRawValues: [UInt32] = []
         var hudMessages: [String] = []
+        var lastFullHudMessage: String?
+        var lastFullHudMessageLength = 0
+        var lastFullHudMessageIsTruncated = false
+        var recentUniqueHudMessages: [String] = []
         var streamingEventSeen = false
         var decoderConfigEventSeen = false
         var hapticsEventSeen = false
@@ -867,10 +1183,15 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
                 owner.eventTagNames = eventTagNames
                 owner.eventTagRawValues = eventTagRawValues
                 owner.hudMessages = hudMessages
+                owner.lastFullHudMessage = lastFullHudMessage
+                owner.lastFullHudMessageLength = lastFullHudMessageLength
+                owner.lastFullHudMessageIsTruncated = lastFullHudMessageIsTruncated
+                owner.recentUniqueHudMessages = recentUniqueHudMessages
                 owner.streamingEventSeen = streamingEventSeen
                 owner.decoderConfigEventSeen = decoderConfigEventSeen
                 owner.hapticsEventSeen = hapticsEventSeen
                 owner.applySnapshot(snapshot)
+                owner.handleInBandParameterSetsIfReady(snapshot)
                 owner.videoToolboxFrameFeedSummary = owner.videoToolboxDecoderBridge?.frameFeedSummarySnapshot()
             }
         }
@@ -936,16 +1257,37 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
                 switch rawValue {
                 case UInt32(ALVR_EVENT_HUD_MESSAGE_UPDATED.rawValue):
                     let hudReadResult = Self.readHudMessage()
-                    hudMessages.append(hudReadResult.message)
+                    lastFullHudMessage = hudReadResult.message
+                    lastFullHudMessageLength = hudReadResult.message.count
+                    lastFullHudMessageIsTruncated = hudReadResult.wasTruncated
+                    Self.appendUniqueHudMessage(hudReadResult.message, to: &recentUniqueHudMessages)
+                    hudMessages = recentUniqueHudMessages
                     await record("Read HUD message: \(hudReadResult.message)")
                     if hudReadResult.wasTruncated {
                         await record("HUD message may be truncated; alvr_hud_message returned \(hudReadResult.returnedLength) bytes for \(hudReadResult.bufferSize)-byte buffer")
                     }
-                case UInt32(ALVR_EVENT_STREAMING_STARTED.rawValue),
-                    UInt32(ALVR_EVENT_STREAMING_STOPPED.rawValue):
+                case UInt32(ALVR_EVENT_STREAMING_STARTED.rawValue):
                     streamingEventSeen = true
+                case UInt32(ALVR_EVENT_STREAMING_STOPPED.rawValue):
+                    streamingEventSeen = true
+                    await updateMain {
+                        owner.invalidateCurrentDecoderForSessionEnd(reason: "streamingStopped")
+                    }
+                    await record("STREAMING_STOPPED event seen; decoder invalidated")
                 case UInt32(ALVR_EVENT_DECODER_CONFIG.rawValue):
                     decoderConfigEventSeen = true
+                    await updateMain {
+                        owner.decoderAutomationState = .readingDecoderConfig
+                        owner.lastDecoderAutomationMessage = "DECODER_CONFIG event seen; reading decoder config."
+                    }
+                    await record("DECODER_CONFIG event seen; reading decoder config")
+                    let decoderConfigSnapshot = Self.readDecoderConfigSnapshotFromCore(triggerReason: "decoderConfigEvent")
+                    await updateMain {
+                        owner.handleAutomaticDecoderConfigSnapshot(
+                            decoderConfigSnapshot,
+                            reason: "decoderConfigEvent"
+                        )
+                    }
                 case UInt32(ALVR_EVENT_HAPTICS.rawValue):
                     hapticsEventSeen = true
                 default:
@@ -975,6 +1317,7 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         await record("Skipped alvr_destroy() after resume. Restart the app before running another ALVR core test.")
 
         await updateMain {
+            owner.invalidateCurrentDecoderForSessionEnd(reason: "sessionStopped")
             owner.requiresAppRestart = true
             owner.state = didPause ? .stopped : .failed("ALVR session diagnostics stopped before pause completed.")
         }
@@ -1000,7 +1343,7 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
     }
 
     private nonisolated static func readHudMessage() -> (message: String, returnedLength: UInt64, bufferSize: Int, wasTruncated: Bool) {
-        let bufferSize = 4096
+        let bufferSize = 16 * 1024
         var buffer = [CChar](repeating: 0, count: bufferSize)
         let returnedLength = buffer.withUnsafeMutableBufferPointer { bufferPointer in
             alvr_hud_message(bufferPointer.baseAddress)
@@ -1017,6 +1360,19 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
             bufferSize: bufferSize,
             wasTruncated: returnedLength >= UInt64(bufferSize)
         )
+    }
+
+    private nonisolated static func appendUniqueHudMessage(_ message: String, to messages: inout [String]) {
+        let trimmedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedMessage.isEmpty else {
+            return
+        }
+
+        messages.removeAll { $0 == trimmedMessage }
+        messages.append(trimmedMessage)
+        if messages.count > 10 {
+            messages.removeFirst(messages.count - 10)
+        }
     }
     #endif
 }

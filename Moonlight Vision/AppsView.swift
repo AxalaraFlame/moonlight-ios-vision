@@ -22,7 +22,6 @@ struct AppsView: View {
     @State private var nowLoading: String?
     @State private var nowLoadingTimeout: Task<Void, Never>?
     @State private var streamModeOverlayApp: TemporaryApp?
-    @State private var alvrConnectionApp: TemporaryApp?
     
     @Binding
     public var host: TemporaryHost
@@ -72,21 +71,13 @@ struct AppsView: View {
                 app: app,
                 onSelect: { mode in
                     streamModeOverlayApp = nil
-                    if mode == .vr {
-                        alvrConnectionApp = app
-                    } else {
-                        Task { await launchStreamWithMode(app: app, mode: mode) }
-                    }
+                    Task { await launchStreamWithMode(app: app, mode: mode) }
                 },
                 onDismiss: {
                     streamModeOverlayApp = nil
                 }
             )
             .environmentObject(viewModel)
-        }
-        .sheet(item: $alvrConnectionApp) { app in
-            ALVRConnectionView(app: app)
-                .environmentObject(viewModel)
         }
     }
     

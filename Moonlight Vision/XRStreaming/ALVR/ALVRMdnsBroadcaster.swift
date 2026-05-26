@@ -45,6 +45,14 @@ final class ALVRMdnsBroadcaster: ObservableObject {
 
     private var listener: NWListener?
 
+    init() {
+        print("[ALVR MdnsBroadcaster] init")
+    }
+
+    deinit {
+        print("[ALVR MdnsBroadcaster] deinit")
+    }
+
     func start(clientInfo: ALVRClientInfoResult) async {
         guard listener == nil else {
             return

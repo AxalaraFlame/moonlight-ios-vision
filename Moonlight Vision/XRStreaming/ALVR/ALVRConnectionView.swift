@@ -12,10 +12,49 @@ struct ALVRConnectionView: View {
     @Environment(\.dismiss) private var dismiss
 
     @ObservedObject private var sessionManager = ALVRSessionManager.shared
+    @ObservedObject private var mdnsBroadcaster: ALVRMdnsBroadcaster
+    @ObservedObject private var sessionDiagnosticsManager: ALVRSessionDiagnosticsManager
 
     let app: TemporaryApp?
+    let showsDismissButton: Bool
+
+    init(
+        app: TemporaryApp?,
+        showsDismissButton: Bool = true,
+        mdnsBroadcaster: ALVRMdnsBroadcaster,
+        sessionDiagnosticsManager: ALVRSessionDiagnosticsManager
+    ) {
+        self.app = app
+        self.showsDismissButton = showsDismissButton
+        self.mdnsBroadcaster = mdnsBroadcaster
+        self.sessionDiagnosticsManager = sessionDiagnosticsManager
+    }
 
     var body: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 28) {
+                    connectionPanel
+                        .frame(minWidth: 280, maxWidth: 360, alignment: .topLeading)
+
+                    diagnosticsPanel
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+
+                VStack(alignment: .leading, spacing: 20) {
+                    connectionPanel
+                    diagnosticsPanel
+                }
+            }
+            .padding(.vertical, 8)
+            .padding(.bottom, 64)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .scrollIndicators(.visible)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var connectionPanel: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 14) {
                 Image(systemName: "visionpro")
@@ -43,14 +82,13 @@ struct ALVRConnectionView: View {
                     .foregroundStyle(.red)
             }
 
-            ALVRDiagnosticsView()
-                .environmentObject(viewModel)
-
             HStack {
-                Button(viewModel.localized("cancel")) {
-                    dismiss()
+                if showsDismissButton {
+                    Button(viewModel.localized("cancel")) {
+                        dismiss()
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
 
                 Button {
                     Task { await disconnectVR() }
@@ -63,9 +101,15 @@ struct ALVRConnectionView: View {
                 Spacer()
             }
         }
-        .padding(28)
-        .frame(width: 520)
-        .glassBackgroundEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var diagnosticsPanel: some View {
+        ALVRDiagnosticsView(
+            mdnsBroadcaster: mdnsBroadcaster,
+            sessionDiagnosticsManager: sessionDiagnosticsManager
+        )
+            .environmentObject(viewModel)
     }
 
     private var isConnecting: Bool {

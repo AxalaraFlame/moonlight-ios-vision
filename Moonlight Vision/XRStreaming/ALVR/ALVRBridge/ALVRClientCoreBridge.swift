@@ -91,6 +91,11 @@ struct ALVRDecoderMetadataSnapshot: Sendable {
     let parameterSetsReady: Bool
     let videoToolboxReady: Bool
     let missingDecoderPrerequisites: [String]
+    let hevcVpsData: [UInt8]
+    let hevcSpsData: [UInt8]
+    let hevcPpsData: [UInt8]
+    let h264SpsData: [UInt8]
+    let h264PpsData: [UInt8]
     let messages: [String]
 }
 
@@ -170,6 +175,11 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
         var h264NonIdrCount = 0
         var seiCount = 0
         var firstNalTypes: [String] = []
+        var hevcVpsData: [UInt8] = []
+        var hevcSpsData: [UInt8] = []
+        var hevcPpsData: [UInt8] = []
+        var h264SpsData: [UInt8] = []
+        var h264PpsData: [UInt8] = []
     }
 
     private let lock = NSLock()
@@ -196,6 +206,11 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
     private var h264NonIdrCount = 0
     private var seiCount = 0
     private var firstNalTypes: [String] = []
+    private var hevcVpsData: [UInt8] = []
+    private var hevcSpsData: [UInt8] = []
+    private var hevcPpsData: [UInt8] = []
+    private var h264SpsData: [UInt8] = []
+    private var h264PpsData: [UInt8] = []
     private var messages: [String] = []
     private var frameFeedSink: ((ALVRDecoderCopiedFrame) -> Void)?
     private var frameFeedCopiedCount = 0
@@ -230,6 +245,11 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
         h264NonIdrCount = 0
         seiCount = 0
         firstNalTypes = []
+        hevcVpsData = []
+        hevcSpsData = []
+        hevcPpsData = []
+        h264SpsData = []
+        h264PpsData = []
         messages = []
         frameFeedSink = nil
         frameFeedCopiedCount = 0
@@ -309,6 +329,22 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
 
         for nalType in nalScanResult.firstNalTypes where firstNalTypes.count < 16 {
             firstNalTypes.append(nalType)
+        }
+
+        if hevcVpsData.isEmpty {
+            hevcVpsData = nalScanResult.hevcVpsData
+        }
+        if hevcSpsData.isEmpty {
+            hevcSpsData = nalScanResult.hevcSpsData
+        }
+        if hevcPpsData.isEmpty {
+            hevcPpsData = nalScanResult.hevcPpsData
+        }
+        if h264SpsData.isEmpty {
+            h264SpsData = nalScanResult.h264SpsData
+        }
+        if h264PpsData.isEmpty {
+            h264PpsData = nalScanResult.h264PpsData
         }
 
         if bufferSize == 0 {
@@ -418,6 +454,11 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
             parameterSetsReady: parameterSetsReady,
             videoToolboxReady: parameterSetsReady,
             missingDecoderPrerequisites: missingDecoderPrerequisites,
+            hevcVpsData: hevcVpsData,
+            hevcSpsData: hevcSpsData,
+            hevcPpsData: hevcPpsData,
+            h264SpsData: h264SpsData,
+            h264PpsData: h264PpsData,
             messages: messages
         )
     }
@@ -445,36 +486,109 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
 
         let scanLimit = min(Int(bufferSize), 256 * 1024)
         var result = NalScanResult()
+        let starts = annexBStarts(bufferPointer: bufferPointer, scanLimit: scanLimit)
+
+        for startIndex in starts.indices {
+            let payloadStart = starts[startIndex].payloadIndex
+            let payloadEnd = startIndex + 1 < starts.count ? starts[startIndex + 1].startCodeIndex : scanLimit
+            guard payloadStart < payloadEnd else {
+                continue
+            }
+
+            let headerByte = bufferPointer.advanced(by: payloadStart).pointee
+            recordNalHeader(headerByte, into: &result)
+            copyParameterSetIfNeeded(
+                headerByte: headerByte,
+                payloadStart: payloadStart,
+                payloadEnd: payloadEnd,
+                bufferPointer: bufferPointer,
+                result: &result
+            )
+        }
+
+        return result
+    }
+
+    private static func annexBStarts(
+        bufferPointer: UnsafePointer<UInt8>,
+        scanLimit: Int
+    ) -> [(startCodeIndex: Int, payloadIndex: Int)] {
+        var starts: [(startCodeIndex: Int, payloadIndex: Int)] = []
         var index = 0
 
         while index + 4 < scanLimit {
-            let startCodeLength: Int
             if bufferPointer.advanced(by: index).pointee == 0,
                bufferPointer.advanced(by: index + 1).pointee == 0,
                bufferPointer.advanced(by: index + 2).pointee == 1 {
-                startCodeLength = 3
+                starts.append((index, index + 3))
+                index += 3
             } else if index + 4 < scanLimit,
                       bufferPointer.advanced(by: index).pointee == 0,
                       bufferPointer.advanced(by: index + 1).pointee == 0,
                       bufferPointer.advanced(by: index + 2).pointee == 0,
                       bufferPointer.advanced(by: index + 3).pointee == 1 {
-                startCodeLength = 4
+                starts.append((index, index + 4))
+                index += 4
             } else {
                 index += 1
-                continue
             }
-
-            let nalHeaderIndex = index + startCodeLength
-            guard nalHeaderIndex < scanLimit else {
-                break
-            }
-
-            let headerByte = bufferPointer.advanced(by: nalHeaderIndex).pointee
-            recordNalHeader(headerByte, into: &result)
-            index = nalHeaderIndex + 1
         }
 
-        return result
+        return starts
+    }
+
+    private static func copyParameterSetIfNeeded(
+        headerByte: UInt8,
+        payloadStart: Int,
+        payloadEnd: Int,
+        bufferPointer: UnsafePointer<UInt8>,
+        result: inout NalScanResult
+    ) {
+        let maxSingleParameterSetSize = 64 * 1024
+        let maxTotalParameterSetSize = 256 * 1024
+        let nalSize = payloadEnd - payloadStart
+        guard nalSize > 0, nalSize <= maxSingleParameterSetSize else {
+            return
+        }
+
+        let totalStoredBytes = result.hevcVpsData.count
+            + result.hevcSpsData.count
+            + result.hevcPpsData.count
+            + result.h264SpsData.count
+            + result.h264PpsData.count
+        guard totalStoredBytes + nalSize <= maxTotalParameterSetSize else {
+            return
+        }
+
+        let hevcNalType = Int((headerByte & 0x7E) >> 1)
+        let h264NalType = Int(headerByte & 0x1F)
+        let looksLikeCommonHevcHeader = (headerByte & 0x01) == 0
+        let copiedNal = Array(UnsafeBufferPointer(
+            start: bufferPointer.advanced(by: payloadStart),
+            count: nalSize
+        ))
+
+        if looksLikeCommonHevcHeader {
+            switch hevcNalType {
+            case 32 where result.hevcVpsData.isEmpty:
+                result.hevcVpsData = copiedNal
+            case 33 where result.hevcSpsData.isEmpty:
+                result.hevcSpsData = copiedNal
+            case 34 where result.hevcPpsData.isEmpty:
+                result.hevcPpsData = copiedNal
+            default:
+                break
+            }
+        }
+
+        switch h264NalType {
+        case 7 where result.h264SpsData.isEmpty:
+            result.h264SpsData = copiedNal
+        case 8 where result.h264PpsData.isEmpty:
+            result.h264PpsData = copiedNal
+        default:
+            break
+        }
     }
 
     private static func recordNalHeader(_ headerByte: UInt8, into result: inout NalScanResult) {

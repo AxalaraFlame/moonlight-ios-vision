@@ -13,6 +13,8 @@ struct ALVRImmersiveView: View {
     @Environment(\.openWindow) private var openWindow
 
     @ObservedObject private var sessionManager = ALVRSessionManager.shared
+    @StateObject private var mdnsBroadcaster = ALVRMdnsBroadcaster()
+    @StateObject private var sessionDiagnosticsManager = ALVRSessionDiagnosticsManager()
 
     var body: some View {
         ZStack {
@@ -27,7 +29,10 @@ struct ALVRImmersiveView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                ALVRDiagnosticsView()
+                ALVRDiagnosticsView(
+                    mdnsBroadcaster: mdnsBroadcaster,
+                    sessionDiagnosticsManager: sessionDiagnosticsManager
+                )
                     .environmentObject(viewModel)
 
                 Button(role: .destructive) {

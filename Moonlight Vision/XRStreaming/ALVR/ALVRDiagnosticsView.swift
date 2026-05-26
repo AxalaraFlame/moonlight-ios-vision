@@ -10,8 +10,8 @@ import SwiftUI
 struct ALVRDiagnosticsView: View {
     @EnvironmentObject private var viewModel: MainViewModel
     @ObservedObject private var sessionManager = ALVRSessionManager.shared
-    @StateObject private var mdnsBroadcaster = ALVRMdnsBroadcaster()
-    @StateObject private var sessionDiagnosticsManager = ALVRSessionDiagnosticsManager()
+    @ObservedObject var mdnsBroadcaster: ALVRMdnsBroadcaster
+    @ObservedObject var sessionDiagnosticsManager: ALVRSessionDiagnosticsManager
     @State private var symbolSmokeResult: SymbolSmokeResult?
     @State private var lifecycleSmokeResult: LifecycleSmokeResult?
     @State private var controlledResumeSmokeResult: ControlledResumeSmokeResult?
@@ -35,7 +35,13 @@ struct ALVRDiagnosticsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            Button("Tap Test") {
+                print("[ALVR UI] Tap Test clicked")
+            }
+            .buttonStyle(.bordered)
+
             Button("Load ALVR Client Info") {
+                print("[ALVR UI] Load ALVR Client Info tapped")
                 guard !coreTestsRequireRestart else {
                     clientInfoResult = ALVRClientInfoResult(
                         success: false,
@@ -395,6 +401,12 @@ struct ALVRDiagnosticsView: View {
             Text("Session diagnostics state: \(sessionDiagnosticsManager.state.description)")
                 .font(.caption2)
                 .foregroundStyle(sessionDiagnosticsManager.isRunning ? .green : .secondary)
+            if let lifecycleWarningMessage = sessionDiagnosticsManager.lifecycleWarningMessage {
+                Text(lifecycleWarningMessage)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text("Elapsed: \(sessionDiagnosticsManager.elapsedSeconds) s")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -452,6 +464,35 @@ struct ALVRDiagnosticsView: View {
             Text("Last step: \(sessionDiagnosticsManager.lastStep)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            Text("Decoder automation state: \(sessionDiagnosticsManager.decoderAutomationState.description)")
+                .font(.caption2)
+                .foregroundStyle(sessionDiagnosticsManager.decoderReady ? .green : .secondary)
+            Text("Decoder config source: \(sessionDiagnosticsManager.decoderConfigSource)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Decoder generation: \(sessionDiagnosticsManager.decoderGeneration)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Decoder ready: \(sessionDiagnosticsManager.decoderReady ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(sessionDiagnosticsManager.decoderReady ? .green : .secondary)
+            Text("Decoder created automatically: \(sessionDiagnosticsManager.decoderCreatedAutomatically ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(sessionDiagnosticsManager.decoderCreatedAutomatically ? .green : .secondary)
+            Text("Last rebuild reason: \(sessionDiagnosticsManager.lastRebuildReason)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Last config source: \(sessionDiagnosticsManager.lastConfigSource)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Auto decoder creation status: \(sessionDiagnosticsManager.autoDecoderCreationStatus)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Last decoder automation message: \(sessionDiagnosticsManager.lastDecoderAutomationMessage)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(nil)
 
             if clientInfoResult?.success != true {
                 Text("Load ALVR Client Info before starting session diagnostics.")
@@ -520,19 +561,56 @@ struct ALVRDiagnosticsView: View {
                     .foregroundStyle(.orange)
             }
 
-            if !sessionDiagnosticsManager.hudMessages.isEmpty {
-                Text("HUD messages:")
+            if let lastFullHudMessage = sessionDiagnosticsManager.lastFullHudMessage {
+                Text("Last full HUD message:")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
-                ForEach(sessionDiagnosticsManager.hudMessages, id: \.self) { hudMessage in
-                    Text(hudMessage)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                Text("Last full HUD message length: \(sessionDiagnosticsManager.lastFullHudMessageLength)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Truncated: \(sessionDiagnosticsManager.lastFullHudMessageIsTruncated ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(sessionDiagnosticsManager.lastFullHudMessageIsTruncated ? .orange : .secondary)
+
+                Text("Raw HUD message debug preview: \(debugPreview(for: lastFullHudMessage))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(nil)
+                    .textSelection(.enabled)
+
+                hudMessageText(lastFullHudMessage)
+            }
+
+            if !sessionDiagnosticsManager.recentUniqueHudMessages.isEmpty {
+                Text("Recent unique HUD messages:")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Recent unique HUD messages count: \(sessionDiagnosticsManager.recentUniqueHudMessages.count)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                ForEach(sessionDiagnosticsManager.recentUniqueHudMessages, id: \.self) { hudMessage in
+                    hudMessageText(hudMessage)
                 }
             }
 
-            Button("Read Decoder Config Snapshot") {
+            if sessionDiagnosticsManager.hasOnlyHudMessagesWithoutStreamingPath {
+                Label(
+                    "PC has not entered ALVR streaming path yet. Check ALVR Streamer trust/connect state, SteamVR driver, firewall, codec settings.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+
+            Text("Normally this diagnostics session automatically reads decoder config or captures in-band parameter sets, then creates the HEVC decoder skeleton. Manual buttons below are only for debugging.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Button("Manual Decoder Config Snapshot") {
                 sessionDiagnosticsManager.readDecoderConfigSnapshot(
                     triggerReason: sessionDiagnosticsSnapshotTriggerReason
                 )
@@ -546,7 +624,7 @@ struct ALVRDiagnosticsView: View {
                     .foregroundStyle(.orange)
             }
 
-            Text("Frame data may arrive before this diagnostics tool sees DECODER_CONFIG. In that case, use NAL scan instead of alvr_get_decoder_config.")
+            Text("Frame data may arrive before this diagnostics tool sees DECODER_CONFIG. In that case, automatic in-band NAL capture waits for VPS/SPS/PPS instead of calling alvr_get_decoder_config.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
@@ -665,7 +743,7 @@ struct ALVRDiagnosticsView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
-            Button("Create HEVC Decoder Skeleton") {
+            Button("Manual HEVC Decoder Skeleton") {
                 sessionDiagnosticsManager.createHEVCDecoderSkeletonFromCurrentConfig()
             }
             .buttonStyle(.bordered)
@@ -772,6 +850,41 @@ struct ALVRDiagnosticsView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+
+                if let lastPlaneCount = videoToolboxFrameFeedSummary.lastPlaneCount {
+                    Text("Last plane count: \(lastPlaneCount)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !videoToolboxFrameFeedSummary.lastBytesPerRowByPlane.isEmpty {
+                    let bytesPerRow = videoToolboxFrameFeedSummary.lastBytesPerRowByPlane.map(String.init).joined(separator: ", ")
+                    Text("Last bytes per row by plane: \(bytesPerRow)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastHasIOSurface = videoToolboxFrameFeedSummary.lastHasIOSurface {
+                    Text("Last pixel buffer has IOSurface: \(lastHasIOSurface ? "true" : "false")")
+                        .font(.caption2)
+                        .foregroundStyle(lastHasIOSurface ? .green : .secondary)
+                }
+
+                if let lastIsMetalCompatible = videoToolboxFrameFeedSummary.lastIsMetalCompatible {
+                    Text("Last pixel buffer Metal compatible: \(lastIsMetalCompatible ? "true" : "false")")
+                        .font(.caption2)
+                        .foregroundStyle(lastIsMetalCompatible ? .green : .orange)
+                }
+
+                if let lastMetalCompatibilityHint = videoToolboxFrameFeedSummary.lastMetalCompatibilityHint {
+                    Text("Metal compatibility hint: \(lastMetalCompatibilityHint)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("Latest decoded frame snapshot retained: \(videoToolboxFrameFeedSummary.hasLatestDecodedPixelBufferSnapshot ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(videoToolboxFrameFeedSummary.hasLatestDecodedPixelBufferSnapshot ? .green : .secondary)
 
                 if let lastDecodedTimestampNs = videoToolboxFrameFeedSummary.lastDecodedTimestampNs {
                     Text("Last decoded timestamp ns: \(lastDecodedTimestampNs)")
@@ -983,10 +1096,20 @@ struct ALVRDiagnosticsView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(14)
         .background(.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .textSelection(.enabled)
         // TODO: Migrate ALVR transport, pose input, and controller input diagnostics from alvr-org/alvr-visionos.
+        .onAppear {
+            print("[ALVRDiagnosticsView] appear")
+        }
+        .onDisappear {
+            print("[ALVRDiagnosticsView] disappear")
+            if sessionDiagnosticsManager.isRunning {
+                print("[ALVRDiagnosticsView] warning: disappeared while ALVR session diagnostics is running; leaving session active.")
+            }
+        }
     }
 
     private var coreTestsRequireRestart: Bool {
@@ -1000,6 +1123,36 @@ struct ALVRDiagnosticsView: View {
             return "decoderConfigEventSeen"
         }
         return "Manual snapshot"
+    }
+
+    private func displayHudMessage(_ message: String) -> String {
+        let limit = 1_000
+        guard message.count > limit else {
+            return message
+        }
+
+        return String(message.prefix(limit)) + "\n[truncated: showing first \(limit) of \(message.count) characters]"
+    }
+
+    private func debugPreview(for message: String) -> String {
+        let previewLimit = 160
+        let preview = String(message.prefix(previewLimit))
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+        if message.count > previewLimit {
+            return preview + " [preview truncated]"
+        }
+        return preview
+    }
+
+    private func hudMessageText(_ message: String) -> some View {
+        Text(displayHudMessage(message))
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .lineLimit(nil)
+            .textSelection(.enabled)
     }
 
     private func decoderMetadataStatusText(for result: ALVRDecoderMetadataScanResult) -> String {

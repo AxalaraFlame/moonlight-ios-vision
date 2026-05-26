@@ -27,6 +27,8 @@ struct MainContentView: View {
 
     @State private var selectedHost: TemporaryHost?
     @State private var selectedMainTab: MainTab = .computers
+    @StateObject private var alvrMdnsBroadcaster = ALVRMdnsBroadcaster()
+    @StateObject private var alvrSessionDiagnosticsManager = ALVRSessionDiagnosticsManager()
 
     @State private var addingHost = false
     @State private var isDeletingHost = false
@@ -241,13 +243,15 @@ struct MainContentView: View {
             }
 
             NavigationStack {
-                ScrollView {
-                    VRPlaceholderView()
-                        .frame(maxWidth: 760, alignment: .leading)
-                        .padding(.horizontal, 48)
-                        .padding(.vertical, 28)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
+                VRPlaceholderView(
+                    mdnsBroadcaster: alvrMdnsBroadcaster,
+                    sessionDiagnosticsManager: alvrSessionDiagnosticsManager
+                )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.horizontal, 36)
+                    .padding(.vertical, 28)
+                    .padding(.bottom, 48)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .navigationTitle("VR")
             }
             .tabItem {
@@ -350,6 +354,8 @@ struct MainContentView: View {
 
 private struct VRPlaceholderView: View {
     @EnvironmentObject private var viewModel: MainViewModel
+    @ObservedObject var mdnsBroadcaster: ALVRMdnsBroadcaster
+    @ObservedObject var sessionDiagnosticsManager: ALVRSessionDiagnosticsManager
     @State private var showDiagnosticsPrompt = false
     @State private var showDiagnostics = false
 
@@ -366,11 +372,17 @@ private struct VRPlaceholderView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                ALVRConnectionView(app: nil, showsDismissButton: false)
-                    .environmentObject(viewModel)
-                    .onAppear {
-                        print("[VR Tab] rendering ALVR diagnostics branch")
-                    }
+                ALVRConnectionView(
+                    app: nil,
+                    showsDismissButton: false,
+                    mdnsBroadcaster: mdnsBroadcaster,
+                    sessionDiagnosticsManager: sessionDiagnosticsManager
+                )
+                .environmentObject(viewModel)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .onAppear {
+                    print("[VR Tab] rendering ALVR diagnostics branch")
+                }
             } else if showDiagnosticsPrompt {
                 Text("ALVR / SteamVR")
                     .font(.title2)
@@ -426,7 +438,7 @@ private struct VRPlaceholderView: View {
             }
         }
         .padding(28)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             print("[VR Tab] rendering placeholder branch")
         }

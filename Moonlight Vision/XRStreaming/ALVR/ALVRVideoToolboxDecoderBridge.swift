@@ -8,6 +8,7 @@
 import CoreMedia
 import CoreVideo
 import Foundation
+import IOSurface
 import VideoToolbox
 
 struct ALVRVideoToolboxDecoderCreationResult: Sendable {
@@ -35,6 +36,11 @@ struct ALVRVideoToolboxDecodeResult: Sendable {
     let pixelBufferWidth: Int?
     let pixelBufferHeight: Int?
     let pixelFormat: String?
+    let planeCount: Int?
+    let bytesPerRowByPlane: [Int]
+    let hasIOSurface: Bool?
+    let isMetalCompatible: Bool?
+    let metalCompatibilityHint: String?
     let timestampNs: UInt64
     let errorDescription: String?
     let messages: [String]
@@ -51,6 +57,12 @@ struct ALVRVideoToolboxFrameFeedSummary: Sendable {
     let lastPixelBufferWidth: Int?
     let lastPixelBufferHeight: Int?
     let lastPixelFormat: String?
+    let lastPlaneCount: Int?
+    let lastBytesPerRowByPlane: [Int]
+    let lastHasIOSurface: Bool?
+    let lastIsMetalCompatible: Bool?
+    let lastMetalCompatibilityHint: String?
+    let hasLatestDecodedPixelBufferSnapshot: Bool
     let lastDecodedTimestampNs: UInt64?
     let decodeErrors: [String]
     let didCallAlvrReportFrameDecoded: Bool
@@ -61,6 +73,7 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
     private let lock = NSLock()
     private var formatDescription: CMVideoFormatDescription?
     private var decompressionSession: VTDecompressionSession?
+    private var latestDecodedPixelBuffer: CVPixelBuffer?
     private var frameFeedSummary = ALVRVideoToolboxFrameFeedSummary(
         feedEnabled: false,
         copiedFrameCount: 0,
@@ -72,6 +85,12 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         lastPixelBufferWidth: nil,
         lastPixelBufferHeight: nil,
         lastPixelFormat: nil,
+        lastPlaneCount: nil,
+        lastBytesPerRowByPlane: [],
+        lastHasIOSurface: nil,
+        lastIsMetalCompatible: nil,
+        lastMetalCompatibilityHint: nil,
+        hasLatestDecodedPixelBufferSnapshot: false,
         lastDecodedTimestampNs: nil,
         decodeErrors: [],
         didCallAlvrReportFrameDecoded: false,
@@ -247,11 +266,18 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             lastPixelBufferWidth: nil,
             lastPixelBufferHeight: nil,
             lastPixelFormat: nil,
+            lastPlaneCount: nil,
+            lastBytesPerRowByPlane: [],
+            lastHasIOSurface: nil,
+            lastIsMetalCompatible: nil,
+            lastMetalCompatibilityHint: nil,
+            hasLatestDecodedPixelBufferSnapshot: false,
             lastDecodedTimestampNs: nil,
             decodeErrors: [],
             didCallAlvrReportFrameDecoded: false,
             messages: feedEnabled ? ["HEVC frame feed smoke test enabled."] : []
         )
+        latestDecodedPixelBuffer = nil
     }
 
     func frameFeedSummarySnapshot() -> ALVRVideoToolboxFrameFeedSummary {
@@ -286,6 +312,11 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
                 pixelBufferWidth: nil,
                 pixelBufferHeight: nil,
                 pixelFormat: nil,
+                planeCount: nil,
+                bytesPerRowByPlane: [],
+                hasIOSurface: nil,
+                isMetalCompatible: nil,
+                metalCompatibilityHint: nil,
                 timestampNs: timestampNs,
                 errorDescription: error,
                 messages: [error]
@@ -316,6 +347,11 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
                 pixelBufferWidth: nil,
                 pixelBufferHeight: nil,
                 pixelFormat: nil,
+                planeCount: nil,
+                bytesPerRowByPlane: [],
+                hasIOSurface: nil,
+                isMetalCompatible: nil,
+                metalCompatibilityHint: nil,
                 timestampNs: timestampNs,
                 errorDescription: errorDescription,
                 messages: messages + [errorDescription]
@@ -342,6 +378,11 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
                 pixelBufferWidth: nil,
                 pixelBufferHeight: nil,
                 pixelFormat: nil,
+                planeCount: nil,
+                bytesPerRowByPlane: [],
+                hasIOSurface: nil,
+                isMetalCompatible: nil,
+                metalCompatibilityHint: nil,
                 timestampNs: timestampNs,
                 errorDescription: error,
                 messages: messages + [error]
@@ -388,11 +429,20 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             summary.lastPixelBufferWidth = callbackSnapshot.pixelBufferWidth
             summary.lastPixelBufferHeight = callbackSnapshot.pixelBufferHeight
             summary.lastPixelFormat = callbackSnapshot.pixelFormat
+            summary.lastPlaneCount = callbackSnapshot.planeCount
+            summary.lastBytesPerRowByPlane = callbackSnapshot.bytesPerRowByPlane
+            summary.lastHasIOSurface = callbackSnapshot.hasIOSurface
+            summary.lastIsMetalCompatible = callbackSnapshot.isMetalCompatible
+            summary.lastMetalCompatibilityHint = callbackSnapshot.metalCompatibilityHint
+            summary.hasLatestDecodedPixelBufferSnapshot = success && callbackSnapshot.latestDecodedPixelBuffer != nil
             summary.lastDecodedTimestampNs = success ? timestampNs : summary.lastDecodedTimestampNs
             summary.messages.append(contentsOf: messages)
             if let errorDescription {
                 summary.decodeErrors.append(errorDescription)
             }
+        }
+        if success {
+            latestDecodedPixelBuffer = callbackSnapshot.latestDecodedPixelBuffer
         }
         lock.unlock()
 
@@ -406,6 +456,11 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             pixelBufferWidth: callbackSnapshot.pixelBufferWidth,
             pixelBufferHeight: callbackSnapshot.pixelBufferHeight,
             pixelFormat: callbackSnapshot.pixelFormat,
+            planeCount: callbackSnapshot.planeCount,
+            bytesPerRowByPlane: callbackSnapshot.bytesPerRowByPlane,
+            hasIOSurface: callbackSnapshot.hasIOSurface,
+            isMetalCompatible: callbackSnapshot.isMetalCompatible,
+            metalCompatibilityHint: callbackSnapshot.metalCompatibilityHint,
             timestampNs: timestampNs,
             errorDescription: errorDescription,
             messages: messages
@@ -421,8 +476,10 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         }
         decompressionSession = nil
         formatDescription = nil
+        latestDecodedPixelBuffer = nil
         frameFeedSummary = Self.updatedSummary(frameFeedSummary) { summary in
             summary.feedEnabled = false
+            summary.hasLatestDecodedPixelBufferSnapshot = false
         }
     }
 
@@ -437,6 +494,12 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         var lastPixelBufferWidth: Int?
         var lastPixelBufferHeight: Int?
         var lastPixelFormat: String?
+        var lastPlaneCount: Int?
+        var lastBytesPerRowByPlane: [Int]
+        var lastHasIOSurface: Bool?
+        var lastIsMetalCompatible: Bool?
+        var lastMetalCompatibilityHint: String?
+        var hasLatestDecodedPixelBufferSnapshot: Bool
         var lastDecodedTimestampNs: UInt64?
         var decodeErrors: [String]
         var didCallAlvrReportFrameDecoded: Bool
@@ -450,6 +513,12 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         let pixelBufferWidth: Int?
         let pixelBufferHeight: Int?
         let pixelFormat: String?
+        let planeCount: Int?
+        let bytesPerRowByPlane: [Int]
+        let hasIOSurface: Bool?
+        let isMetalCompatible: Bool?
+        let metalCompatibilityHint: String?
+        let latestDecodedPixelBuffer: CVPixelBuffer?
     }
 
     private final class DecodeCallbackState: @unchecked Sendable {
@@ -460,6 +529,12 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         private var pixelBufferWidth: Int?
         private var pixelBufferHeight: Int?
         private var pixelFormat: String?
+        private var planeCount: Int?
+        private var bytesPerRowByPlane: [Int] = []
+        private var hasIOSurface: Bool?
+        private var isMetalCompatible: Bool?
+        private var metalCompatibilityHint: String?
+        private var latestDecodedPixelBuffer: CVPixelBuffer?
 
         func record(status: OSStatus, infoFlags: VTDecodeInfoFlags, imageBuffer: CVImageBuffer?) {
             lock.lock()
@@ -472,6 +547,15 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
                 pixelBufferWidth = CVPixelBufferGetWidth(imageBuffer)
                 pixelBufferHeight = CVPixelBufferGetHeight(imageBuffer)
                 pixelFormat = ALVRVideoToolboxDecoderBridge.pixelFormatDescription(CVPixelBufferGetPixelFormatType(imageBuffer))
+                planeCount = CVPixelBufferGetPlaneCount(imageBuffer)
+                bytesPerRowByPlane = ALVRVideoToolboxDecoderBridge.bytesPerRowByPlane(for: imageBuffer)
+                hasIOSurface = CVPixelBufferGetIOSurface(imageBuffer) != nil
+                isMetalCompatible = ALVRVideoToolboxDecoderBridge.metalCompatibilityAttachment(for: imageBuffer)
+                metalCompatibilityHint = ALVRVideoToolboxDecoderBridge.metalCompatibilityHint(
+                    isMetalCompatible: isMetalCompatible,
+                    hasIOSurface: hasIOSurface
+                )
+                latestDecodedPixelBuffer = imageBuffer
             }
         }
 
@@ -485,7 +569,13 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
                 imageBufferReceived: imageBufferReceived,
                 pixelBufferWidth: pixelBufferWidth,
                 pixelBufferHeight: pixelBufferHeight,
-                pixelFormat: pixelFormat
+                pixelFormat: pixelFormat,
+                planeCount: planeCount,
+                bytesPerRowByPlane: bytesPerRowByPlane,
+                hasIOSurface: hasIOSurface,
+                isMetalCompatible: isMetalCompatible,
+                metalCompatibilityHint: metalCompatibilityHint,
+                latestDecodedPixelBuffer: latestDecodedPixelBuffer
             )
         }
     }
@@ -505,6 +595,12 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             lastPixelBufferWidth: summary.lastPixelBufferWidth,
             lastPixelBufferHeight: summary.lastPixelBufferHeight,
             lastPixelFormat: summary.lastPixelFormat,
+            lastPlaneCount: summary.lastPlaneCount,
+            lastBytesPerRowByPlane: summary.lastBytesPerRowByPlane,
+            lastHasIOSurface: summary.lastHasIOSurface,
+            lastIsMetalCompatible: summary.lastIsMetalCompatible,
+            lastMetalCompatibilityHint: summary.lastMetalCompatibilityHint,
+            hasLatestDecodedPixelBufferSnapshot: summary.hasLatestDecodedPixelBufferSnapshot,
             lastDecodedTimestampNs: summary.lastDecodedTimestampNs,
             decodeErrors: summary.decodeErrors,
             didCallAlvrReportFrameDecoded: summary.didCallAlvrReportFrameDecoded,
@@ -522,6 +618,12 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             lastPixelBufferWidth: mutable.lastPixelBufferWidth,
             lastPixelBufferHeight: mutable.lastPixelBufferHeight,
             lastPixelFormat: mutable.lastPixelFormat,
+            lastPlaneCount: mutable.lastPlaneCount,
+            lastBytesPerRowByPlane: mutable.lastBytesPerRowByPlane,
+            lastHasIOSurface: mutable.lastHasIOSurface,
+            lastIsMetalCompatible: mutable.lastIsMetalCompatible,
+            lastMetalCompatibilityHint: mutable.lastMetalCompatibilityHint,
+            hasLatestDecodedPixelBufferSnapshot: mutable.hasLatestDecodedPixelBufferSnapshot,
             lastDecodedTimestampNs: mutable.lastDecodedTimestampNs,
             decodeErrors: mutable.decodeErrors,
             didCallAlvrReportFrameDecoded: mutable.didCallAlvrReportFrameDecoded,
@@ -665,5 +767,44 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             return String(String.UnicodeScalarView(scalars))
         }
         return "\(fourCC) (\(pixelFormat))"
+    }
+
+    private static func bytesPerRowByPlane(for pixelBuffer: CVPixelBuffer) -> [Int] {
+        let planeCount = CVPixelBufferGetPlaneCount(pixelBuffer)
+        guard planeCount > 0 else {
+            return [CVPixelBufferGetBytesPerRow(pixelBuffer)]
+        }
+
+        return (0..<planeCount).map { planeIndex in
+            CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, planeIndex)
+        }
+    }
+
+    private static func metalCompatibilityAttachment(for pixelBuffer: CVPixelBuffer) -> Bool? {
+        guard let attachment = CVBufferCopyAttachment(pixelBuffer, kCVPixelBufferMetalCompatibilityKey, nil) else {
+            return nil
+        }
+
+        return (attachment as? NSNumber)?.boolValue
+    }
+
+    private static func metalCompatibilityHint(isMetalCompatible: Bool?, hasIOSurface: Bool?) -> String? {
+        if isMetalCompatible == true {
+            return "Pixel buffer reports Metal compatibility."
+        }
+
+        if isMetalCompatible == false {
+            return "Pixel buffer reports it is not Metal compatible."
+        }
+
+        if hasIOSurface == true {
+            return "Metal compatibility attachment is unavailable; IOSurface is present and Metal compatibility was requested."
+        }
+
+        if hasIOSurface == false {
+            return "Metal compatibility attachment is unavailable and no IOSurface was reported."
+        }
+
+        return "Metal compatibility attachment is unavailable."
     }
 }
