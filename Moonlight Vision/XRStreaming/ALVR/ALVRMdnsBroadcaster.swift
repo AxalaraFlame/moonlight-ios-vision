@@ -38,12 +38,27 @@ final class ALVRMdnsBroadcaster: ObservableObject {
     @Published private(set) var serviceType = ""
     @Published private(set) var deviceId = ""
     @Published private(set) var protocolId = ""
+    @Published private(set) var activeHostname = ""
     @Published private(set) var portDescription = ""
+    @Published private(set) var activePort: UInt16?
     @Published private(set) var txtRecordDescription = ""
     @Published private(set) var lastError: String?
     @Published private(set) var isBroadcasting = false
+    @Published private(set) var listenerStateDescription = "Idle"
+    @Published private(set) var listenerStartTimeDescription = ""
+    @Published private(set) var listenerRestartCount = 0
+    @Published private(set) var localIPv4Candidates: [String] = []
+    @Published private(set) var ignoredIPv4Candidates: [String] = []
+    @Published private(set) var recommendedManualConnectionAddress: String?
+    @Published private(set) var listenerPortChangedWarning: String?
+
+    var listenerReady: Bool {
+        isBroadcasting
+    }
 
     private var listener: NWListener?
+    private var listenerStartCount = 0
+    private var lastReadyPort: UInt16?
 
     init() {
         print("[ALVR MdnsBroadcaster] init")
@@ -74,13 +89,23 @@ final class ALVRMdnsBroadcaster: ObservableObject {
         }
 
         state = .starting
+        listenerStateDescription = state.description
         lastError = nil
         isBroadcasting = false
         serviceName = "ALVR Apple Vision Pro"
         self.serviceType = serviceType
         self.deviceId = deviceId
         self.protocolId = protocolId
+        activeHostname = clientInfo.deviceId ?? clientInfo.rawHostname.map { "\($0).alvr" } ?? ""
+        let classifiedAddresses = Self.classifyIPv4Addresses(clientInfo.localIPv4Addresses)
+        localIPv4Candidates = classifiedAddresses.usable
+        ignoredIPv4Candidates = classifiedAddresses.ignored
         portDescription = "System assigned"
+        activePort = nil
+        recommendedManualConnectionAddress = nil
+        listenerStartCount += 1
+        listenerRestartCount = max(0, listenerStartCount - 1)
+        listenerStartTimeDescription = Self.listenerDateFormatter.string(from: Date())
 
         let txtRecordValues = [
             "protocol": protocolId,
@@ -118,30 +143,53 @@ final class ALVRMdnsBroadcaster: ObservableObject {
         listener?.cancel()
         listener = nil
         state = .stopped
+        listenerStateDescription = state.description
         lastError = nil
         isBroadcasting = false
         portDescription = ""
+        activePort = nil
+        recommendedManualConnectionAddress = nil
     }
 
     private func handleListenerState(_ listenerState: NWListener.State) {
         switch listenerState {
         case .setup:
             state = .starting
+            listenerStateDescription = "Setup"
             isBroadcasting = false
         case .waiting(let error):
+            listenerStateDescription = "Waiting: \(error.localizedDescription)"
             fail(error.localizedDescription)
         case .ready:
             state = .ready
+            listenerStateDescription = state.description
             isBroadcasting = true
-            portDescription = listener?.port.map(String.init(describing:)) ?? "System assigned"
+            if let port = listener?.port {
+                let portValue = port.rawValue
+                activePort = portValue
+                portDescription = String(portValue)
+                if let lastReadyPort, lastReadyPort != portValue {
+                    listenerPortChangedWarning = "mDNS listener port changed. Restart ALVR discovery on the PC or manually add the new IP:port."
+                }
+                lastReadyPort = portValue
+            } else {
+                activePort = nil
+                portDescription = "System assigned"
+            }
+            updateRecommendedManualConnectionAddress()
         case .failed(let error):
+            listenerStateDescription = "Failed: \(error.localizedDescription)"
             fail(error.localizedDescription)
         case .cancelled:
             listener = nil
             state = .stopped
+            listenerStateDescription = state.description
             isBroadcasting = false
             portDescription = ""
+            activePort = nil
+            recommendedManualConnectionAddress = nil
         @unknown default:
+            listenerStateDescription = "Unknown"
             fail("Unknown NWListener state")
         }
     }
@@ -150,8 +198,68 @@ final class ALVRMdnsBroadcaster: ObservableObject {
         listener?.cancel()
         listener = nil
         state = .failed(message)
+        listenerStateDescription = state.description
         lastError = message
         isBroadcasting = false
         portDescription = ""
+        activePort = nil
+        recommendedManualConnectionAddress = nil
     }
+
+    private func updateRecommendedManualConnectionAddress() {
+        guard let activePort else {
+            recommendedManualConnectionAddress = nil
+            return
+        }
+
+        guard let address = Self.preferredManualAddress(from: localIPv4Candidates) else {
+            recommendedManualConnectionAddress = nil
+            return
+        }
+
+        recommendedManualConnectionAddress = "\(address):\(activePort)"
+    }
+
+    private static func classifyIPv4Addresses(_ addresses: [String]) -> (usable: [String], ignored: [String]) {
+        var usable: [String] = []
+        var ignored: [String] = []
+
+        for address in addresses {
+            let octets = address.split(separator: ".").compactMap { Int($0) }
+            guard octets.count == 4 else {
+                ignored.append(address)
+                continue
+            }
+
+            let isLoopback = octets[0] == 127
+            let isLinkLocal = octets[0] == 169 && octets[1] == 254
+            let isBenchmarkNetwork = octets[0] == 198 && (octets[1] == 18 || octets[1] == 19)
+
+            if isLoopback || isLinkLocal || isBenchmarkNetwork {
+                ignored.append(address)
+            } else {
+                usable.append(address)
+            }
+        }
+
+        return (usable, ignored)
+    }
+
+    private static func preferredManualAddress(from addresses: [String]) -> String? {
+        addresses.first(where: { $0.hasPrefix("10.") })
+            ?? addresses.first(where: { $0.hasPrefix("192.168.") })
+            ?? addresses.first(where: { address in
+                let octets = address.split(separator: ".").compactMap { Int($0) }
+                guard octets.count == 4 else { return false }
+                return octets[0] == 172 && (16...31).contains(octets[1])
+            })
+            ?? addresses.first
+    }
+
+    private static let listenerDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .medium
+        return formatter
+    }()
 }
