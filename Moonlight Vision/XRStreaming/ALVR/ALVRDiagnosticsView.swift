@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct ALVRDiagnosticsView: View {
     @EnvironmentObject private var viewModel: MainViewModel
@@ -19,6 +20,36 @@ struct ALVRDiagnosticsView: View {
     @State private var decoderMetadataScanResult: ALVRDecoderMetadataScanResult?
     @State private var isControlledResumeSmokeTestRunning = false
     @State private var isDecoderMetadataScanRunning = false
+    @State private var isStartingHeadsetSession = false
+    @State private var headsetSessionStartMode = "manual"
+    @State private var mdnsStartedAfterCoreReady = false
+    @State private var waitingForPcTrust = false
+    @State private var headsetSessionMessage: String?
+    @State private var headsetSessionError: String?
+    @State private var copyStatusMessage: String?
+    @State private var lastCopiedAt: Date?
+
+    private var currentHudSearchText: String {
+        ([sessionDiagnosticsManager.lastFullHudMessage].compactMap { $0 } + sessionDiagnosticsManager.recentUniqueHudMessages)
+            .joined(separator: "\n")
+            .lowercased()
+    }
+
+    private var streamingStartedCount: Int {
+        countEvent("STREAMING_STARTED", in: sessionDiagnosticsManager.eventTagNames)
+    }
+
+    private var streamingStoppedCount: Int {
+        countEvent("STREAMING_STOPPED", in: sessionDiagnosticsManager.eventTagNames)
+    }
+
+    private var successfulConnectionSeen: Bool {
+        streamingStartedCount > 0 || containsAny(currentHudSearchText, ["successful connection", "stream will begin soon"])
+    }
+
+    private var effectiveWaitingForPcTrust: Bool {
+        waitingForPcTrust && !successfulConnectionSeen
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -40,7 +71,19 @@ struct ALVRDiagnosticsView: View {
             }
             .buttonStyle(.bordered)
 
-            Button("Load ALVR Client Info") {
+            Button("Copy ALVR Diagnostics Summary") {
+                copyDiagnosticsSummary()
+            }
+            .buttonStyle(.bordered)
+
+            if let copyStatusMessage {
+                Text(copyStatusMessage)
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button("Manual: Load ALVR Client Info") {
                 print("[ALVR UI] Load ALVR Client Info tapped")
                 guard !coreTestsRequireRestart else {
                     clientInfoResult = ALVRClientInfoResult(
@@ -105,11 +148,7 @@ struct ALVRDiagnosticsView: View {
                         .foregroundStyle(.orange)
                 }
 
-                ForEach(clientInfoResult.messages, id: \.self) { message in
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                diagnosticMessages(clientInfoResult.messages)
 
                 if let errorDescription = clientInfoResult.errorDescription {
                     Text(errorDescription)
@@ -119,14 +158,14 @@ struct ALVRDiagnosticsView: View {
             }
 
             HStack {
-                Button("Start ALVR mDNS Broadcast") {
+                Button("Manual: Start ALVR mDNS Broadcast") {
                     guard let clientInfoResult else { return }
                     Task { await mdnsBroadcaster.start(clientInfo: clientInfoResult) }
                 }
                 .buttonStyle(.bordered)
                 .disabled(clientInfoResult?.success != true || mdnsBroadcaster.isBroadcasting)
 
-                Button("Stop ALVR mDNS Broadcast") {
+                Button("Manual: Stop ALVR mDNS Broadcast") {
                     mdnsBroadcaster.stop()
                 }
                 .buttonStyle(.bordered)
@@ -136,6 +175,31 @@ struct ALVRDiagnosticsView: View {
             Text("Broadcast state: \(mdnsBroadcaster.state.description)")
                 .font(.caption2)
                 .foregroundStyle(mdnsBroadcaster.isBroadcasting ? .green : .secondary)
+            Text("Listener state: \(mdnsBroadcaster.listenerStateDescription)")
+                .font(.caption2)
+                .foregroundStyle(mdnsBroadcaster.listenerReady ? .green : .secondary)
+            Text("Listener ready: \(mdnsBroadcaster.listenerReady ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(mdnsBroadcaster.listenerReady ? .green : .secondary)
+            Text("Listener restart count: \(mdnsBroadcaster.listenerRestartCount)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            if !mdnsBroadcaster.listenerStartTimeDescription.isEmpty {
+                Text("Listener started: \(mdnsBroadcaster.listenerStartTimeDescription)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !mdnsBroadcaster.activeHostname.isEmpty {
+                Text("Hostname: \(mdnsBroadcaster.activeHostname)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else if let deviceId = clientInfoResult?.deviceId {
+                Text("Hostname: \(deviceId)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
 
             if clientInfoResult?.success != true {
                 Text("Load ALVR Client Info before starting mDNS broadcast.")
@@ -150,7 +214,7 @@ struct ALVRDiagnosticsView: View {
             }
 
             if !mdnsBroadcaster.serviceType.isEmpty {
-                Text("Service type: \(mdnsBroadcaster.serviceType)")
+                Text("mDNS service: \(mdnsBroadcaster.serviceType)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -168,9 +232,46 @@ struct ALVRDiagnosticsView: View {
             }
 
             if !mdnsBroadcaster.portDescription.isEmpty {
-                Text("Port: \(mdnsBroadcaster.portDescription)")
+                Text("Active port: \(mdnsBroadcaster.portDescription)")
+                    .font(.caption2)
+                    .foregroundStyle(mdnsBroadcaster.activePort == nil ? Color.secondary : Color.green)
+            }
+
+            if let recommendedManualConnectionAddress = mdnsBroadcaster.recommendedManualConnectionAddress {
+                Text("Recommended PC manual address: \(recommendedManualConnectionAddress)")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                    .textSelection(.enabled)
+            } else if mdnsBroadcaster.listenerReady {
+                Text("Warning: no usable LAN IPv4 found for manual PC connection.")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !mdnsBroadcaster.localIPv4Candidates.isEmpty {
+                Text("Local IPv4 candidates: " + mdnsBroadcaster.localIPv4Candidates.joined(separator: ", "))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+            } else if clientInfoResult?.success == true {
+                Text("Warning: no usable LAN IPv4 found. Check Wi-Fi/LAN connectivity.")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !mdnsBroadcaster.ignoredIPv4Candidates.isEmpty {
+                Text("Ignored IPv4 candidates: " + mdnsBroadcaster.ignoredIPv4Candidates.joined(separator: ", "))
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let listenerPortChangedWarning = mdnsBroadcaster.listenerPortChangedWarning {
+                Text(listenerPortChangedWarning)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if !mdnsBroadcaster.txtRecordDescription.isEmpty {
@@ -358,11 +459,7 @@ struct ALVRDiagnosticsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                ForEach(decoderMetadataScanResult.messages, id: \.self) { message in
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                diagnosticMessages(decoderMetadataScanResult.messages)
 
                 if let errorDescription = decoderMetadataScanResult.errorDescription {
                     Text(errorDescription)
@@ -371,16 +468,69 @@ struct ALVRDiagnosticsView: View {
                 }
             }
 
-            Text("Use ALVR Session Diagnostics after the PC ALVR Streamer has discovered or trusted this headset. This does not render SteamVR yet.")
+            Text("Recommended order: start the ALVR headset session first so the core, decoder callback, and event loop are ready; then advertise mDNS and let the PC ALVR Streamer discover, trust, and connect to this headset.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
             HStack {
-                Button("Start ALVR Session Diagnostics") {
-                    sessionDiagnosticsManager.start(
-                        clientInfo: clientInfoResult,
-                        isMdnsBroadcasting: mdnsBroadcaster.isBroadcasting
-                    )
+                Button(isStartingHeadsetSession ? "Starting ALVR Headset Session..." : "Start ALVR Headset Session") {
+                    Task { await startHeadsetSession() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(
+                    isStartingHeadsetSession
+                        || coreTestsRequireRestart
+                        || sessionDiagnosticsManager.isRunning
+                        || sessionDiagnosticsManager.isStopping
+                )
+
+                Button("Stop ALVR Headset Session") {
+                    stopHeadsetSession()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!sessionDiagnosticsManager.isRunning && !mdnsBroadcaster.isBroadcasting)
+            }
+
+            if let headsetSessionMessage {
+                Text(headsetSessionMessage)
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let headsetSessionError {
+                Text(headsetSessionError)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            headsetSessionStatusPanel
+
+            Text("Headset session start mode: \(headsetSessionStartMode)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("ALVR core ready: \(sessionDiagnosticsManager.alvrCoreReady ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(sessionDiagnosticsManager.alvrCoreReady ? .green : .secondary)
+            Text("Event loop running: \(sessionDiagnosticsManager.eventLoopRunning ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(sessionDiagnosticsManager.eventLoopRunning ? .green : .secondary)
+            Text("mDNS started after core ready: \(mdnsStartedAfterCoreReady ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(mdnsStartedAfterCoreReady ? .green : .secondary)
+            Text("Waiting for PC trust/connect: \(effectiveWaitingForPcTrust ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(effectiveWaitingForPcTrust ? .orange : .secondary)
+
+            HStack {
+                Button("Manual: Start ALVR Session Diagnostics") {
+                    headsetSessionStartMode = "manual"
+                    mdnsStartedAfterCoreReady = false
+                    waitingForPcTrust = false
+                    headsetSessionMessage = "Manual session diagnostics started. Start mDNS afterward when the event loop is running."
+                    headsetSessionError = nil
+                    sessionDiagnosticsManager.start(clientInfo: clientInfoResult)
                 }
                 .buttonStyle(.bordered)
                 .disabled(
@@ -388,10 +538,9 @@ struct ALVRDiagnosticsView: View {
                         || sessionDiagnosticsManager.isRunning
                         || sessionDiagnosticsManager.isStopping
                         || clientInfoResult?.success != true
-                        || !mdnsBroadcaster.isBroadcasting
                 )
 
-                Button("Stop ALVR Session Diagnostics") {
+                Button("Manual: Stop ALVR Session Diagnostics") {
                     sessionDiagnosticsManager.stop()
                 }
                 .buttonStyle(.bordered)
@@ -494,6 +643,45 @@ struct ALVRDiagnosticsView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .lineLimit(nil)
 
+            VStack(alignment: .leading, spacing: 6) {
+                Button("Request Keyframe / Parameter Sets") {
+                    sessionDiagnosticsManager.requestKeyframeParameterSets()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!sessionDiagnosticsManager.keyframeRequestAvailable)
+
+                Text("Returning false once may restart or disturb the PC stream. Use this only for diagnostics.")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Keyframe request available: \(sessionDiagnosticsManager.keyframeRequestAvailable ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(sessionDiagnosticsManager.keyframeRequestAvailable ? .green : .secondary)
+                Text("Keyframe request pending: \(sessionDiagnosticsManager.keyframeRequestPending ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(sessionDiagnosticsManager.keyframeRequestPending ? .orange : .secondary)
+                Text("Keyframe request triggered: \(sessionDiagnosticsManager.keyframeRequestTriggered ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(sessionDiagnosticsManager.keyframeRequestTriggered ? .green : .secondary)
+                Text("Keyframe request count: \(sessionDiagnosticsManager.keyframeRequestCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Frames since keyframe request: \(sessionDiagnosticsManager.framesSinceKeyframeRequest)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if let secondsSinceKeyframeRequest = sessionDiagnosticsManager.secondsSinceKeyframeRequest {
+                    Text("Seconds since keyframe request: \(String(format: "%.1f", secondsSinceKeyframeRequest))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let keyframeRequestMessage = sessionDiagnosticsManager.keyframeRequestMessage {
+                    Text(keyframeRequestMessage)
+                        .font(.caption2)
+                        .foregroundStyle(sessionDiagnosticsManager.keyframeRequestTriggered ? .green : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             if clientInfoResult?.success != true {
                 Text("Load ALVR Client Info before starting session diagnostics.")
                     .font(.caption2)
@@ -501,7 +689,7 @@ struct ALVRDiagnosticsView: View {
             }
 
             if !mdnsBroadcaster.isBroadcasting {
-                Text("Start ALVR mDNS Broadcast before starting session diagnostics.")
+                Text("mDNS broadcast is not running. This is OK for the core-first flow; start mDNS after the ALVR event loop is running.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -592,9 +780,7 @@ struct ALVRDiagnosticsView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
-                ForEach(sessionDiagnosticsManager.recentUniqueHudMessages, id: \.self) { hudMessage in
-                    hudMessageText(hudMessage)
-                }
+                hudMessages(sessionDiagnosticsManager.recentUniqueHudMessages)
             }
 
             if sessionDiagnosticsManager.hasOnlyHudMessagesWithoutStreamingPath {
@@ -726,11 +912,7 @@ struct ALVRDiagnosticsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                ForEach(decoderConfigSnapshot.messages, id: \.self) { message in
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                diagnosticMessages(decoderConfigSnapshot.messages)
 
                 if let errorDescription = decoderConfigSnapshot.errorDescription {
                     Text(errorDescription)
@@ -778,11 +960,7 @@ struct ALVRDiagnosticsView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
-                ForEach(videoToolboxDecoderCreationResult.messages, id: \.self) { message in
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                diagnosticMessages(videoToolboxDecoderCreationResult.messages)
 
                 if let errorDescription = videoToolboxDecoderCreationResult.errorDescription {
                     Text(errorDescription)
@@ -797,6 +975,25 @@ struct ALVRDiagnosticsView: View {
             .buttonStyle(.bordered)
             .disabled(!sessionDiagnosticsManager.canFeedTestFramesToHEVCDecoder)
 
+            Button("Request IDR for Decode Test") {
+                sessionDiagnosticsManager.requestDecodeTestIdr()
+            }
+            .buttonStyle(.bordered)
+            .disabled(!sessionDiagnosticsManager.decodeTestIdrRequestAvailable)
+
+            if !sessionDiagnosticsManager.decodeTestIdrRequestAvailable,
+               let disabledReason = sessionDiagnosticsManager.decodeTestIdrRequestDisabledReason {
+                Text("Request IDR disabled: \(disabledReason)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text("This returns false once from the decoder callback to ask the streamer for a new keyframe. Use only for diagnostics.")
+                .font(.caption2)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+
             if let videoToolboxFrameFeedSummary = sessionDiagnosticsManager.videoToolboxFrameFeedSummary {
                 Label(
                     videoToolboxFrameFeedSummary.decodedFrameCount > 0 ? "HEVC frame decode smoke test received CVPixelBuffer" : "HEVC frame decode smoke test waiting for frames",
@@ -807,15 +1004,137 @@ struct ALVRDiagnosticsView: View {
                 Text("Frame feed enabled: \(videoToolboxFrameFeedSummary.feedEnabled ? "true" : "false")")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                Text("Frame feed test enabled: \(sessionDiagnosticsManager.frameFeedTestEnabled ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(sessionDiagnosticsManager.frameFeedTestEnabled ? .green : .secondary)
+                Text("Frame feed waiting for IDR/CRA: \(sessionDiagnosticsManager.frameFeedWaitingForIdr ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(sessionDiagnosticsManager.frameFeedWaitingForIdr ? .orange : .secondary)
+                Text("Frame feed can copy frames: \(sessionDiagnosticsManager.frameFeedCanCopyFrames ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(sessionDiagnosticsManager.frameFeedCanCopyFrames ? .green : .secondary)
+                if let frameFeedDisabledReason = sessionDiagnosticsManager.frameFeedDisabledReason {
+                    Text("Frame feed disabled reason: \(frameFeedDisabledReason)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let frameFeedLastSkipReason = sessionDiagnosticsManager.frameFeedLastSkipReason {
+                    Text("Frame feed last skip reason: \(frameFeedLastSkipReason)")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Frame feed copied after IDR request: \(sessionDiagnosticsManager.frameFeedCopiedAfterIdrRequest ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(sessionDiagnosticsManager.frameFeedCopiedAfterIdrRequest ? .green : .secondary)
+                if let frameFeedStartedAtFrameCount = sessionDiagnosticsManager.frameFeedStartedAtFrameCount {
+                    Text("Frame feed started at frame count: \(frameFeedStartedAtFrameCount)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Text("Feed callback seen frames: \(sessionDiagnosticsManager.feedCallbackSeenFrameCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Feed callback saw IDR/CRA: \(sessionDiagnosticsManager.feedCallbackSawIdrOrCraCount)")
+                    .font(.caption2)
+                    .foregroundStyle(sessionDiagnosticsManager.feedCallbackSawIdrOrCraCount > 0 ? .green : .secondary)
+                if !sessionDiagnosticsManager.feedCallbackLastNalTypes.isEmpty {
+                    Text("Feed callback last NAL types: \(sessionDiagnosticsManager.feedCallbackLastNalTypes.joined(separator: ", "))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                if let feedCallbackLastDecision = sessionDiagnosticsManager.feedCallbackLastDecision {
+                    Text("Feed callback last decision: \(feedCallbackLastDecision)")
+                        .font(.caption2)
+                        .foregroundStyle(feedCallbackLastDecision == "copied" ? .green : .orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let feedCallbackLastSkipReason = sessionDiagnosticsManager.feedCallbackLastSkipReason {
+                    Text("Feed callback last skip reason: \(feedCallbackLastSkipReason)")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Pending decode frames: \(sessionDiagnosticsManager.pendingDecodeFrameCount)")
+                    .font(.caption2)
+                    .foregroundStyle(sessionDiagnosticsManager.pendingDecodeFrameCount > 0 ? .orange : .secondary)
+                if videoToolboxFrameFeedSummary.feedEnabled,
+                   videoToolboxFrameFeedSummary.copiedFrameCount == 0,
+                   sessionDiagnosticsManager.decoderReady {
+                    Text("Decoder is ready, but feed test is waiting for a new IDR/CRA frame. Click Request IDR for Decode Test.")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text("Copied frames: \(videoToolboxFrameFeedSummary.copiedFrameCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Copied IDR / CRA frames: \(videoToolboxFrameFeedSummary.copiedIdrFrameCount) / \(videoToolboxFrameFeedSummary.copiedCraFrameCount)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Text("Submitted frames: \(videoToolboxFrameFeedSummary.submittedFrameCount)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                Text("Submitted IDR / CRA frames: \(videoToolboxFrameFeedSummary.submittedIdrFrameCount) / \(videoToolboxFrameFeedSummary.submittedCraFrameCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 Text("Decoded frames: \(videoToolboxFrameFeedSummary.decodedFrameCount)")
                     .font(.caption2)
                     .foregroundStyle(videoToolboxFrameFeedSummary.decodedFrameCount > 0 ? .green : .secondary)
+                Text("Fed frame was random access: \(videoToolboxFrameFeedSummary.fedFrameWasRandomAccess ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(videoToolboxFrameFeedSummary.fedFrameWasRandomAccess ? .green : .orange)
+                if !videoToolboxFrameFeedSummary.fedFrameNalTypes.isEmpty {
+                    Text("Fed frame NAL types: \(videoToolboxFrameFeedSummary.fedFrameNalTypes.joined(separator: ", "))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                if let copiedFramePrefixHex = videoToolboxFrameFeedSummary.copiedFramePrefixHex {
+                    Text("Copied frame prefix hex: \(copiedFramePrefixHex)")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                if let convertedLengthPrefixedPrefixHex = videoToolboxFrameFeedSummary.convertedLengthPrefixedPrefixHex {
+                    Text("Length-prefixed prefix hex: \(convertedLengthPrefixedPrefixHex)")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                Text("Used synthetic PTS: \(videoToolboxFrameFeedSummary.usedSyntheticPts ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if let samplePtsDescription = videoToolboxFrameFeedSummary.samplePtsDescription {
+                    Text("Sample PTS: \(samplePtsDescription)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Text("Annex-B / converted NAL count: \(videoToolboxFrameFeedSummary.annexBNalCount) / \(videoToolboxFrameFeedSummary.convertedNalCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Converted sample size: \(videoToolboxFrameFeedSummary.convertedSampleSize)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if let firstConvertedNalLength = videoToolboxFrameFeedSummary.firstConvertedNalLength {
+                    Text("First converted NAL length: \(firstConvertedNalLength)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let conversionError = videoToolboxFrameFeedSummary.conversionError {
+                    Text("Conversion error: \(conversionError)")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+                Text("Waited for async decode frames: \(videoToolboxFrameFeedSummary.didWaitForAsynchronousFrames ? "true" : "false")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 Text("Did call alvr_report_frame_decoded: \(videoToolboxFrameFeedSummary.didCallAlvrReportFrameDecoded ? "true" : "false")")
                     .font(.caption2)
                     .foregroundStyle(videoToolboxFrameFeedSummary.didCallAlvrReportFrameDecoded ? .orange : .secondary)
@@ -898,11 +1217,34 @@ struct ALVRDiagnosticsView: View {
                         .foregroundStyle(.orange)
                 }
 
-                ForEach(videoToolboxFrameFeedSummary.messages, id: \.self) { message in
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                diagnosticMessages(videoToolboxFrameFeedSummary.messages)
+            }
+
+            Text("Decode-test IDR request available: \(sessionDiagnosticsManager.decodeTestIdrRequestAvailable ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(sessionDiagnosticsManager.decodeTestIdrRequestAvailable ? .green : .secondary)
+            Text("Decode-test IDR request pending: \(sessionDiagnosticsManager.decodeTestIdrRequestPending ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(sessionDiagnosticsManager.decodeTestIdrRequestPending ? .orange : .secondary)
+            Text("Decode-test IDR request triggered: \(sessionDiagnosticsManager.decodeTestIdrRequestTriggered ? "true" : "false")")
+                .font(.caption2)
+                .foregroundStyle(sessionDiagnosticsManager.decodeTestIdrRequestTriggered ? .green : .secondary)
+            Text("Decode-test IDR request count: \(sessionDiagnosticsManager.decodeTestIdrRequestCount)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("Frames since decode-test IDR request: \(sessionDiagnosticsManager.framesSinceDecodeTestIdrRequest)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if let secondsSinceDecodeTestIdrRequest = sessionDiagnosticsManager.secondsSinceDecodeTestIdrRequest {
+                Text("Seconds since decode-test IDR request: \(String(format: "%.1f", secondsSinceDecodeTestIdrRequest))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            if let decodeTestIdrRequestMessage = sessionDiagnosticsManager.decodeTestIdrRequestMessage {
+                Text(decodeTestIdrRequestMessage)
+                    .font(.caption2)
+                    .foregroundStyle(sessionDiagnosticsManager.decodeTestIdrRequestTriggered ? .green : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if sessionDiagnosticsManager.requiresAppRestart {
@@ -911,11 +1253,7 @@ struct ALVRDiagnosticsView: View {
                     .foregroundStyle(.orange)
             }
 
-            ForEach(sessionDiagnosticsManager.messages, id: \.self) { message in
-                Text(message)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            diagnosticMessages(sessionDiagnosticsManager.messages)
 
             if let errorMessage = sessionDiagnosticsManager.errorMessage {
                 Text(errorMessage)
@@ -939,11 +1277,7 @@ struct ALVRDiagnosticsView: View {
                 )
                 .font(.caption)
 
-                ForEach(symbolSmokeResult.messages, id: \.self) { message in
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                diagnosticMessages(symbolSmokeResult.messages)
 
                 if let pathId = symbolSmokeResult.pathId {
                     Text("Path ID: \(pathId)")
@@ -989,11 +1323,7 @@ struct ALVRDiagnosticsView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
-                ForEach(lifecycleSmokeResult.messages, id: \.self) { message in
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                diagnosticMessages(lifecycleSmokeResult.messages)
 
                 if let errorDescription = lifecycleSmokeResult.errorDescription {
                     Text(errorDescription)
@@ -1076,18 +1406,10 @@ struct ALVRDiagnosticsView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 
-                    ForEach(controlledResumeSmokeResult.hudMessages, id: \.self) { hudMessage in
-                        Text(hudMessage)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                    hudMessages(controlledResumeSmokeResult.hudMessages)
                 }
 
-                ForEach(controlledResumeSmokeResult.messages, id: \.self) { message in
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                diagnosticMessages(controlledResumeSmokeResult.messages)
 
                 if let errorDescription = controlledResumeSmokeResult.errorDescription {
                     Text(errorDescription)
@@ -1125,6 +1447,144 @@ struct ALVRDiagnosticsView: View {
         return "Manual snapshot"
     }
 
+    private var headsetSessionStatusPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Headset session status", systemImage: "visionpro")
+                .font(.caption)
+                .foregroundStyle(.primary)
+
+            statusLine("headsetSessionStartMode", headsetSessionStartMode)
+            statusLine("alvrCoreReady", sessionDiagnosticsManager.alvrCoreReady ? "true" : "false", isPositive: sessionDiagnosticsManager.alvrCoreReady)
+            statusLine("eventLoopRunning", sessionDiagnosticsManager.eventLoopRunning ? "true" : "false", isPositive: sessionDiagnosticsManager.eventLoopRunning)
+            statusLine("mdnsStartedAfterCoreReady", mdnsStartedAfterCoreReady ? "true" : "false", isPositive: mdnsStartedAfterCoreReady)
+            statusLine("waitingForPcTrust", waitingForPcTrust ? "true" : "false", isWarning: waitingForPcTrust)
+            statusLine("decoderAutomationState", sessionDiagnosticsManager.decoderAutomationState.description)
+            statusLine("decoderReady", sessionDiagnosticsManager.decoderReady ? "true" : "false", isPositive: sessionDiagnosticsManager.decoderReady)
+            statusLine("decoderConfigEventSeen", sessionDiagnosticsManager.decoderConfigEventSeen ? "true" : "false", isPositive: sessionDiagnosticsManager.decoderConfigEventSeen)
+            statusLine("frameCount", "\(sessionDiagnosticsManager.frameCount)", isPositive: sessionDiagnosticsManager.frameCount > 0)
+            statusLine("totalBytes", "\(sessionDiagnosticsManager.totalBytes)", isPositive: sessionDiagnosticsManager.totalBytes > 0)
+
+            if sessionDiagnosticsManager.frameCount == 0 && hudIndicatesStreamWillBeginSoon {
+                Text("PC connected, but no frames have arrived yet.")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if sessionDiagnosticsManager.frameCount > 0 && !sessionDiagnosticsManager.decoderConfigEventSeen {
+                Text("Frames are arriving, but decoder config has not been seen yet.")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func statusLine(
+        _ title: String,
+        _ value: String,
+        isPositive: Bool = false,
+        isWarning: Bool = false
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title + ":")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption2)
+                .foregroundStyle(isPositive ? .green : (isWarning ? .orange : .secondary))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var hudIndicatesStreamWillBeginSoon: Bool {
+        if lastHudMessageContainsStreamWillBeginSoon(sessionDiagnosticsManager.lastFullHudMessage) {
+            return true
+        }
+
+        return sessionDiagnosticsManager.recentUniqueHudMessages.contains {
+            lastHudMessageContainsStreamWillBeginSoon($0)
+        }
+    }
+
+    private func lastHudMessageContainsStreamWillBeginSoon(_ message: String?) -> Bool {
+        message?.range(of: "The stream will begin soon", options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    }
+
+    @MainActor
+    private func startHeadsetSession() async {
+        guard !isStartingHeadsetSession else { return }
+
+        isStartingHeadsetSession = true
+        headsetSessionStartMode = "automatic"
+        mdnsStartedAfterCoreReady = false
+        waitingForPcTrust = false
+        headsetSessionMessage = nil
+        headsetSessionError = nil
+
+        defer {
+            isStartingHeadsetSession = false
+        }
+
+        guard !coreTestsRequireRestart else {
+            headsetSessionError = "Restart the app before running another ALVR core test."
+            return
+        }
+
+        var resolvedClientInfo = clientInfoResult
+        if resolvedClientInfo?.success != true {
+            headsetSessionMessage = "Loading ALVR Client Info before starting the core."
+            let loadedInfo = ALVRClientCoreBridge.shared.loadClientInfo()
+            clientInfoResult = loadedInfo
+            resolvedClientInfo = loadedInfo
+        }
+
+        guard let resolvedClientInfo, resolvedClientInfo.success else {
+            headsetSessionError = "Load ALVR Client Info failed. The ALVR headset session was not started."
+            return
+        }
+
+        headsetSessionMessage = "Starting ALVR core, decoder callback, and event loop before mDNS broadcast."
+        sessionDiagnosticsManager.start(clientInfo: resolvedClientInfo)
+
+        guard await waitForSessionDiagnosticsEventLoop() else {
+            headsetSessionError = "ALVR event loop did not reach Running state. mDNS broadcast was not started."
+            return
+        }
+
+        headsetSessionMessage = "ALVR event loop is running. Starting mDNS broadcast."
+        await mdnsBroadcaster.start(clientInfo: resolvedClientInfo)
+        mdnsStartedAfterCoreReady = true
+        waitingForPcTrust = true
+        headsetSessionMessage = "Now open ALVR Streamer on PC and Trust / Connect this headset."
+    }
+
+    @MainActor
+    private func stopHeadsetSession() {
+        headsetSessionMessage = "Stopping ALVR headset session."
+        waitingForPcTrust = false
+        mdnsStartedAfterCoreReady = false
+        sessionDiagnosticsManager.stop()
+        mdnsBroadcaster.stop()
+    }
+
+    @MainActor
+    private func waitForSessionDiagnosticsEventLoop() async -> Bool {
+        for _ in 0..<100 {
+            if sessionDiagnosticsManager.eventLoopRunning {
+                return true
+            }
+            if !sessionDiagnosticsManager.isRunning && !sessionDiagnosticsManager.isStopping {
+                return false
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return sessionDiagnosticsManager.eventLoopRunning
+    }
+
     private func displayHudMessage(_ message: String) -> String {
         let limit = 1_000
         guard message.count > limit else {
@@ -1153,6 +1613,385 @@ struct ALVRDiagnosticsView: View {
             .fixedSize(horizontal: false, vertical: true)
             .lineLimit(nil)
             .textSelection(.enabled)
+    }
+
+    private func diagnosticMessages(_ messages: [String]) -> some View {
+        ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
+            Text(message)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func hudMessages(_ messages: [String]) -> some View {
+        ForEach(Array(messages.enumerated()), id: \.offset) { _, hudMessage in
+            hudMessageText(hudMessage)
+        }
+    }
+
+    private func copyDiagnosticsSummary() {
+        let summary = makeDiagnosticsSummary()
+        UIPasteboard.general.string = summary
+        lastCopiedAt = Date()
+
+        if UIPasteboard.general.string == summary {
+            copyStatusMessage = "Copied ALVR diagnostics to clipboard (\(summary.count) characters)."
+        } else {
+            copyStatusMessage = "Failed to verify clipboard contents."
+        }
+    }
+
+    private func makeDiagnosticsSummary() -> String {
+        var lines: [String] = []
+
+        func section(_ title: String) {
+            if !lines.isEmpty {
+                lines.append("")
+            }
+            lines.append("## \(title)")
+        }
+
+        func line(_ key: String, _ value: Any?) {
+            lines.append("\(key): \(stringValue(value))")
+        }
+
+        func list(_ key: String, _ values: [String]) {
+            line(key, values.isEmpty ? "[]" : values.joined(separator: ", "))
+        }
+
+        let now = ISO8601DateFormatter().string(from: Date())
+        let hudMessagesForSummary = allHudMessagesForSummary()
+        let hudText = hudMessagesForSummary.joined(separator: "\n")
+        let hudLower = hudText.lowercased()
+        let decoderConfigSnapshot = sessionDiagnosticsManager.decoderConfigSnapshot
+        let videoToolboxDecoderCreationResult = sessionDiagnosticsManager.videoToolboxDecoderCreationResult
+        let videoToolboxFrameFeedSummary = sessionDiagnosticsManager.videoToolboxFrameFeedSummary
+        let eventTagNames = sessionDiagnosticsManager.eventTagNames
+
+        section("Basic Info")
+        line("Timestamp", now)
+        line("App / target", "Moonlight Vision / Moonlight XrOS")
+        line("Branch", "unknown at runtime")
+        line("ALVR HUD version", alvrHUDVersion(from: hudMessagesForSummary) ?? "unknown")
+        line("Hostname", mdnsBroadcaster.activeHostname.isEmpty ? clientInfoResult?.rawHostname : mdnsBroadcaster.activeHostname)
+        line("Device ID", firstNonEmpty(mdnsBroadcaster.deviceId, clientInfoResult?.deviceId))
+        line("Service type", firstNonEmpty(mdnsBroadcaster.serviceType, clientInfoResult?.serviceType))
+        line("Protocol ID", firstNonEmpty(mdnsBroadcaster.protocolId, clientInfoResult?.protocolId))
+
+        section("Network / mDNS")
+        line("mDNS broadcaster state", mdnsBroadcaster.state.description)
+        line("Listener state", mdnsBroadcaster.listenerStateDescription)
+        line("Listener ready", mdnsBroadcaster.listenerReady)
+        line("Service name", mdnsBroadcaster.serviceName)
+        line("Service type", mdnsBroadcaster.serviceType)
+        line("Device ID", mdnsBroadcaster.deviceId)
+        line("Protocol ID", mdnsBroadcaster.protocolId)
+        line("Active listener port", mdnsBroadcaster.activePort)
+        line("Port description", mdnsBroadcaster.portDescription)
+        line("Recommended manual address", mdnsBroadcaster.recommendedManualConnectionAddress)
+        list("Local IPv4 candidates", mdnsBroadcaster.localIPv4Candidates)
+        list("Ignored IPv4 candidates", mdnsBroadcaster.ignoredIPv4Candidates)
+        line("Last mDNS error", mdnsBroadcaster.lastError)
+        line("Listener start time", mdnsBroadcaster.listenerStartTimeDescription)
+        line("Listener restart count", mdnsBroadcaster.listenerRestartCount)
+        line("TXT record", mdnsBroadcaster.txtRecordDescription)
+        line("Port changed warning", mdnsBroadcaster.listenerPortChangedWarning)
+
+        section("Session State")
+        line("Session diagnostics state", sessionDiagnosticsManager.state.description)
+        line("Headset session start mode", headsetSessionStartMode)
+        line("ALVR core ready", sessionDiagnosticsManager.alvrCoreReady)
+        line("Event loop running", sessionDiagnosticsManager.eventLoopRunning)
+        line("mDNS started after core ready", mdnsStartedAfterCoreReady)
+        line("Waiting for PC trust", effectiveWaitingForPcTrust)
+        line("Requires app restart", sessionDiagnosticsManager.requiresAppRestart)
+        line("Last step", sessionDiagnosticsManager.lastStep)
+        line("Last error", firstNonEmpty(sessionDiagnosticsManager.errorMessage, headsetSessionError))
+        line("Elapsed seconds", sessionDiagnosticsManager.elapsedSeconds)
+        line("Session start time", "not tracked in UI state")
+        line("Last event time", "not tracked in UI state")
+        line("Last frame received time", "not tracked in UI state")
+        line("Last decoded frame timestamp ns", videoToolboxFrameFeedSummary?.lastDecodedTimestampNs)
+        line("Seconds since last frame", "not tracked in UI state")
+        line("Seconds since last event", "not tracked in UI state")
+        line("Headset session message", headsetSessionMessage)
+        line("Lifecycle warning", sessionDiagnosticsManager.lifecycleWarningMessage)
+
+        section("Event Counters")
+        line("Streaming started count", countEvent("STREAMING_STARTED", in: eventTagNames))
+        line("Streaming stopped count", countEvent("STREAMING_STOPPED", in: eventTagNames))
+        line("Decoder config event count", countEvent("DECODER_CONFIG", in: eventTagNames))
+        line("HUD message update count", countEvent("HUD_MESSAGE_UPDATED", in: eventTagNames))
+        line("Real-time config event count", countEvent("REAL_TIME_CONFIG", in: eventTagNames))
+        line("Haptics event count", countEvent("HAPTICS", in: eventTagNames))
+        list("Event tag names", eventTagNames)
+        line("Event tag raw values", sessionDiagnosticsManager.eventTagRawValues.map(String.init).joined(separator: ", "))
+
+        section("HUD Messages")
+        line("Last full HUD message", sessionDiagnosticsManager.lastFullHudMessage)
+        line("Last full HUD message length", sessionDiagnosticsManager.lastFullHudMessageLength)
+        line("Last full HUD message truncated", sessionDiagnosticsManager.lastFullHudMessageIsTruncated)
+        list("Recent unique HUD messages", sessionDiagnosticsManager.recentUniqueHudMessages)
+        line("trustRequired", containsAny(hudLower, ["trust", "trusted", "untrusted"]))
+        line("successfulConnectionSeen", successfulConnectionSeen)
+        line("connectionResetByPeerSeen", containsAny(hudLower, ["connection reset by peer", "reset by peer"]))
+        line("resourceTemporarilyUnavailableSeen", containsAny(hudLower, ["resource temporarily unavailable"]))
+        line("streamerRestartSeen", containsAny(hudLower, ["streamer restart", "restart streamer", "restarting"]))
+        line("inferredConnectionStage", inferredConnectionStage(from: hudLower))
+
+        section("Decoder Automation")
+        line("Decoder automation state", sessionDiagnosticsManager.decoderAutomationState.description)
+        line("Decoder config source", sessionDiagnosticsManager.decoderConfigSource)
+        line("Decoder generation", sessionDiagnosticsManager.decoderGeneration)
+        line("Decoder ready", sessionDiagnosticsManager.decoderReady)
+        line("Decoder created automatically", sessionDiagnosticsManager.decoderCreatedAutomatically)
+        line("Last rebuild reason", sessionDiagnosticsManager.lastRebuildReason)
+        line("Last config source", sessionDiagnosticsManager.lastConfigSource)
+        line("Auto decoder creation status", sessionDiagnosticsManager.autoDecoderCreationStatus)
+        line("Parameter sets ready", sessionDiagnosticsManager.parameterSetsReady)
+        line("VideoToolbox ready", sessionDiagnosticsManager.videoToolboxReady)
+        list("Missing decoder prerequisites", sessionDiagnosticsManager.missingDecoderPrerequisites)
+        line("Last decoder automation message", sessionDiagnosticsManager.lastDecoderAutomationMessage)
+        line("Keyframe request available", sessionDiagnosticsManager.keyframeRequestAvailable)
+        line("Keyframe request pending", sessionDiagnosticsManager.keyframeRequestPending)
+        line("Keyframe request triggered", sessionDiagnosticsManager.keyframeRequestTriggered)
+        line("Keyframe request count", sessionDiagnosticsManager.keyframeRequestCount)
+        line("Frames since keyframe request", sessionDiagnosticsManager.framesSinceKeyframeRequest)
+        line("Seconds since keyframe request", sessionDiagnosticsManager.secondsSinceKeyframeRequest)
+        line("Keyframe request message", sessionDiagnosticsManager.keyframeRequestMessage)
+        line("Decode-test IDR request available", sessionDiagnosticsManager.decodeTestIdrRequestAvailable)
+        line("Decode-test IDR request pending", sessionDiagnosticsManager.decodeTestIdrRequestPending)
+        line("Decode-test IDR request triggered", sessionDiagnosticsManager.decodeTestIdrRequestTriggered)
+        line("Decode-test IDR request count", sessionDiagnosticsManager.decodeTestIdrRequestCount)
+        line("Frames since decode-test IDR request", sessionDiagnosticsManager.framesSinceDecodeTestIdrRequest)
+        line("Seconds since decode-test IDR request", sessionDiagnosticsManager.secondsSinceDecodeTestIdrRequest)
+        line("Decode-test IDR request message", sessionDiagnosticsManager.decodeTestIdrRequestMessage)
+        line("Decode-test IDR request disabled reason", sessionDiagnosticsManager.decodeTestIdrRequestDisabledReason)
+
+        section("NAL / Frame Metadata")
+        line("Frame count", sessionDiagnosticsManager.frameCount)
+        line("Total bytes", sessionDiagnosticsManager.totalBytes)
+        line("Last timestamp ns", sessionDiagnosticsManager.lastTimestampNs)
+        line("Min buffer size", sessionDiagnosticsManager.minBufferSize)
+        line("Max buffer size", sessionDiagnosticsManager.maxBufferSize)
+        line("Codec guess", sessionDiagnosticsManager.codecGuess)
+        line("NAL unit count", sessionDiagnosticsManager.nalUnitCount)
+        line("HEVC VPS/SPS/PPS counts", "\(sessionDiagnosticsManager.hevcVpsCount)/\(sessionDiagnosticsManager.hevcSpsCount)/\(sessionDiagnosticsManager.hevcPpsCount)")
+        line("HEVC IDR / CRA counts", "\(sessionDiagnosticsManager.hevcIdrCount)/\(sessionDiagnosticsManager.hevcCraCount)")
+        line("HEVC TRAIL / slice / non-IDR counts", "\(sessionDiagnosticsManager.hevcTrailCount)/\(sessionDiagnosticsManager.hevcSliceCount)/\(sessionDiagnosticsManager.hevcNonIdrCount)")
+        line("H264 SPS/PPS/IDR/non-IDR counts", "\(sessionDiagnosticsManager.h264SpsCount)/\(sessionDiagnosticsManager.h264PpsCount)/\(sessionDiagnosticsManager.h264IdrCount)/\(sessionDiagnosticsManager.h264NonIdrCount)")
+        line("SEI count", sessionDiagnosticsManager.seiCount)
+        line("Has parameter sets", sessionDiagnosticsManager.hasParameterSets)
+        line("Has IDR", sessionDiagnosticsManager.hasIdr)
+        list("First NAL types", sessionDiagnosticsManager.firstNalTypes)
+        line("First frame prefix hex", sessionDiagnosticsManager.firstFramePrefixHex)
+        line("Last frame prefix hex", sessionDiagnosticsManager.lastFramePrefixHex)
+
+        section("Decoder Config Snapshot")
+        line("Decoder config event seen", sessionDiagnosticsManager.decoderConfigEventSeen)
+        line("Attempted", decoderConfigSnapshot?.attempted)
+        line("Success", decoderConfigSnapshot?.success)
+        line("Size", decoderConfigSnapshot?.size)
+        line("Prefix hex", decoderConfigSnapshot?.prefixHex)
+        line("ASCII preview", decoderConfigSnapshot?.asciiPreview)
+        line("Config codec guess", decoderConfigSnapshot?.configCodecGuess)
+        line("Config NAL count", decoderConfigSnapshot?.configNalUnitCount)
+        line("Config HEVC VPS/SPS/PPS counts", optionalCounts(decoderConfigSnapshot?.hevcVpsCount, decoderConfigSnapshot?.hevcSpsCount, decoderConfigSnapshot?.hevcPpsCount))
+        line("Config HEVC VPS/SPS/PPS sizes", optionalCounts(decoderConfigSnapshot?.hevcVpsSize, decoderConfigSnapshot?.hevcSpsSize, decoderConfigSnapshot?.hevcPpsSize))
+        line("Config H264 SPS/PPS counts", optionalCounts(decoderConfigSnapshot?.h264SpsCount, decoderConfigSnapshot?.h264PpsCount))
+        line("Config H264 SPS/PPS sizes", optionalCounts(decoderConfigSnapshot?.h264SpsSize, decoderConfigSnapshot?.h264PpsSize))
+        line("Config parameter sets ready", decoderConfigSnapshot?.parameterSetsReady)
+        line("Config VideoToolbox ready", decoderConfigSnapshot?.videoToolboxReady)
+        list("Config NAL types", decoderConfigSnapshot?.configNalTypes ?? [])
+        list("Config missing prerequisites", decoderConfigSnapshot?.missingDecoderPrerequisites ?? [])
+        line("Config trigger reason", decoderConfigSnapshot?.triggerReason)
+        list("Config messages", decoderConfigSnapshot?.messages ?? [])
+        line("Config error", decoderConfigSnapshot?.errorDescription)
+
+        section("VideoToolbox Diagnostics")
+        line("HEVC decoder skeleton created", videoToolboxDecoderCreationResult?.success)
+        line("Created format description", videoToolboxDecoderCreationResult?.createdFormatDescription)
+        line("Created decompression session", videoToolboxDecoderCreationResult?.createdDecompressionSession)
+        line("Format description status", videoToolboxDecoderCreationResult?.formatDescriptionStatus)
+        line("Decompression session status", videoToolboxDecoderCreationResult?.decompressionSessionStatus)
+        line("VPS/SPS/PPS sizes", optionalCounts(videoToolboxDecoderCreationResult?.vpsSize, videoToolboxDecoderCreationResult?.spsSize, videoToolboxDecoderCreationResult?.ppsSize))
+        line("Frame feed test enabled", sessionDiagnosticsManager.frameFeedTestEnabled)
+        line("Frame feed waiting for IDR/CRA", sessionDiagnosticsManager.frameFeedWaitingForIdr)
+        line("Frame feed can copy frames", sessionDiagnosticsManager.frameFeedCanCopyFrames)
+        line("Frame feed disabled reason", sessionDiagnosticsManager.frameFeedDisabledReason)
+        line("Frame feed last skip reason", sessionDiagnosticsManager.frameFeedLastSkipReason)
+        line("Frame feed copied after IDR request", sessionDiagnosticsManager.frameFeedCopiedAfterIdrRequest)
+        line("Frame feed started at frame count", sessionDiagnosticsManager.frameFeedStartedAtFrameCount)
+        line("Feed callback seen frame count", sessionDiagnosticsManager.feedCallbackSeenFrameCount)
+        line("Feed callback saw IDR/CRA count", sessionDiagnosticsManager.feedCallbackSawIdrOrCraCount)
+        list("Feed callback last NAL types", sessionDiagnosticsManager.feedCallbackLastNalTypes)
+        line("Feed callback last decision", sessionDiagnosticsManager.feedCallbackLastDecision)
+        line("Feed callback last skip reason", sessionDiagnosticsManager.feedCallbackLastSkipReason)
+        line("Pending decode frame count", sessionDiagnosticsManager.pendingDecodeFrameCount)
+        line("Copied frame count", videoToolboxFrameFeedSummary?.copiedFrameCount)
+        line("Copied IDR frame count", videoToolboxFrameFeedSummary?.copiedIdrFrameCount)
+        line("Copied CRA frame count", videoToolboxFrameFeedSummary?.copiedCraFrameCount)
+        line("Submitted frame count", videoToolboxFrameFeedSummary?.submittedFrameCount)
+        line("Submitted IDR frame count", videoToolboxFrameFeedSummary?.submittedIdrFrameCount)
+        line("Submitted CRA frame count", videoToolboxFrameFeedSummary?.submittedCraFrameCount)
+        line("Decoded frame count", videoToolboxFrameFeedSummary?.decodedFrameCount)
+        line("Fed frame NAL types", videoToolboxFrameFeedSummary?.fedFrameNalTypes.joined(separator: ", "))
+        line("Fed frame was random access", videoToolboxFrameFeedSummary?.fedFrameWasRandomAccess)
+        line("Copied frame prefix hex", videoToolboxFrameFeedSummary?.copiedFramePrefixHex)
+        line("Length-prefixed prefix hex", videoToolboxFrameFeedSummary?.convertedLengthPrefixedPrefixHex)
+        line("Used synthetic PTS", videoToolboxFrameFeedSummary?.usedSyntheticPts)
+        line("Sample PTS", videoToolboxFrameFeedSummary?.samplePtsDescription)
+        line("Annex-B NAL count", videoToolboxFrameFeedSummary?.annexBNalCount)
+        line("Converted NAL count", videoToolboxFrameFeedSummary?.convertedNalCount)
+        line("Converted sample size", videoToolboxFrameFeedSummary?.convertedSampleSize)
+        line("First converted NAL length", videoToolboxFrameFeedSummary?.firstConvertedNalLength)
+        line("Conversion error", videoToolboxFrameFeedSummary?.conversionError)
+        line("Waited for async decode frames", videoToolboxFrameFeedSummary?.didWaitForAsynchronousFrames)
+        line("Last decode status", videoToolboxFrameFeedSummary?.lastDecodeCallStatus)
+        line("Last callback status", videoToolboxFrameFeedSummary?.lastCallbackStatus)
+        line("Info flags", videoToolboxFrameFeedSummary?.lastInfoFlagsRawValue)
+        line("Pixel buffer width", videoToolboxFrameFeedSummary?.lastPixelBufferWidth)
+        line("Pixel buffer height", videoToolboxFrameFeedSummary?.lastPixelBufferHeight)
+        line("Pixel format", videoToolboxFrameFeedSummary?.lastPixelFormat)
+        line("Plane count", videoToolboxFrameFeedSummary?.lastPlaneCount)
+        line("Bytes per row", videoToolboxFrameFeedSummary?.lastBytesPerRowByPlane.map(String.init).joined(separator: ", "))
+        line("Has IOSurface", videoToolboxFrameFeedSummary?.lastHasIOSurface)
+        line("Metal compatibility hint", videoToolboxFrameFeedSummary?.lastMetalCompatibilityHint)
+        line("Did call alvr_report_frame_decoded", videoToolboxFrameFeedSummary?.didCallAlvrReportFrameDecoded ?? false)
+        list("Decode errors", videoToolboxFrameFeedSummary?.decodeErrors ?? [])
+        list("VideoToolbox creation messages", videoToolboxDecoderCreationResult?.messages ?? [])
+        list("VideoToolbox frame feed messages", videoToolboxFrameFeedSummary?.messages ?? [])
+
+        section("Smoke Test Results")
+        list("Symbol smoke messages", symbolSmokeResult?.messages ?? [])
+        line("Symbol smoke error", symbolSmokeResult?.errorDescription)
+        list("Lifecycle smoke messages", lifecycleSmokeResult?.messages ?? [])
+        line("Lifecycle smoke error", lifecycleSmokeResult?.errorDescription)
+        list("Controlled resume HUD messages", controlledResumeSmokeResult?.hudMessages ?? [])
+        list("Controlled resume messages", controlledResumeSmokeResult?.messages ?? [])
+        line("Controlled resume error", controlledResumeSmokeResult?.errorDescription)
+
+        section("Warnings / Current Diagnosis")
+        warningsForSummary(hudLower: hudLower).forEach { lines.append("- \($0)") }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private func warningsForSummary(hudLower: String) -> [String] {
+        var warnings: [String] = []
+
+        if sessionDiagnosticsManager.streamingEventSeen && !sessionDiagnosticsManager.decoderConfigEventSeen {
+            warnings.append("Streaming started, but DECODER_CONFIG was not observed.")
+        }
+        let configProvidesParameterSets = sessionDiagnosticsManager.decoderReady
+            || sessionDiagnosticsManager.decoderConfigSnapshot?.parameterSetsReady == true
+        if sessionDiagnosticsManager.frameCount > 0
+            && sessionDiagnosticsManager.hevcVpsCount == 0
+            && sessionDiagnosticsManager.hevcSpsCount == 0
+            && sessionDiagnosticsManager.hevcPpsCount == 0
+            && !configProvidesParameterSets {
+            warnings.append("HEVC frames are arriving, but VPS/SPS/PPS are missing.")
+        } else if sessionDiagnosticsManager.frameCount > 0
+                    && sessionDiagnosticsManager.hevcVpsCount == 0
+                    && sessionDiagnosticsManager.hevcSpsCount == 0
+                    && sessionDiagnosticsManager.hevcPpsCount == 0
+                    && configProvidesParameterSets {
+            warnings.append("In-band VPS/SPS/PPS not present in video frames, but decoder config provides VPS/SPS/PPS.")
+        }
+        if streamingStoppedCount > 0 && containsAny(hudLower, ["connection reset by peer", "reset by peer"]) {
+            warnings.append("PC ALVR Streamer closed the connection.")
+        }
+        if containsAny(hudLower, ["microphone not found", "mic not found", "microphone"]) {
+            warnings.append("Disable Headset microphone in ALVR Streamer until microphone capture is implemented.")
+        }
+        if mdnsBroadcaster.listenerReady && !sessionDiagnosticsManager.eventLoopRunning {
+            warnings.append("PC can discover headset, but ALVR core is not running.")
+        }
+        if sessionDiagnosticsManager.frameCount == 0 && containsAny(hudLower, ["the stream will begin soon"]) {
+            warnings.append("PC connected, but no frames have arrived yet.")
+        }
+        if sessionDiagnosticsManager.frameCount > 0 && !sessionDiagnosticsManager.decoderConfigEventSeen {
+            warnings.append("Frames are arriving, but decoder config has not been seen yet.")
+        }
+        if let listenerPortChangedWarning = mdnsBroadcaster.listenerPortChangedWarning {
+            warnings.append(listenerPortChangedWarning)
+        }
+        if warnings.isEmpty {
+            warnings.append("No high-priority ALVR diagnostic warnings inferred from current UI state.")
+        }
+
+        return warnings
+    }
+
+    private func allHudMessagesForSummary() -> [String] {
+        var messages: [String] = []
+        if let lastFullHudMessage = sessionDiagnosticsManager.lastFullHudMessage {
+            messages.append(lastFullHudMessage)
+        }
+        messages.append(contentsOf: sessionDiagnosticsManager.recentUniqueHudMessages)
+        messages.append(contentsOf: sessionDiagnosticsManager.hudMessages)
+        if let controlledResumeSmokeResult {
+            messages.append(contentsOf: controlledResumeSmokeResult.hudMessages)
+        }
+        return messages
+    }
+
+    private func alvrHUDVersion(from messages: [String]) -> String? {
+        messages.first { $0.localizedCaseInsensitiveContains("ALVR v") }
+    }
+
+    private func inferredConnectionStage(from hudLower: String) -> String {
+        if containsAny(hudLower, ["successful connection", "stream will begin soon"]) {
+            return "PC connected; waiting for stream frames or decoder path."
+        }
+        if containsAny(hudLower, ["trust", "trusted", "untrusted"]) {
+            return "Trust / pairing required or in progress."
+        }
+        if containsAny(hudLower, ["connection reset", "reset by peer"]) {
+            return "PC connection closed/reset."
+        }
+        if sessionDiagnosticsManager.frameCount > 0 {
+            return "Video frames are arriving."
+        }
+        if sessionDiagnosticsManager.streamingEventSeen {
+            return "Streaming event observed."
+        }
+        if mdnsBroadcaster.listenerReady {
+            return "mDNS advertising is ready; waiting for PC discovery/connect."
+        }
+        return "Idle or unknown."
+    }
+
+    private func countEvent(_ needle: String, in eventTagNames: [String]) -> Int {
+        eventTagNames.filter { $0.localizedCaseInsensitiveContains(needle) }.count
+    }
+
+    private func containsAny(_ text: String, _ needles: [String]) -> Bool {
+        needles.contains { text.localizedCaseInsensitiveContains($0) }
+    }
+
+    private func firstNonEmpty(_ values: String?...) -> String? {
+        values.first { value in
+            guard let value else { return false }
+            return !value.isEmpty
+        } ?? nil
+    }
+
+    private func optionalCounts(_ values: Any?...) -> String {
+        values.map { stringValue($0) }.joined(separator: "/")
+    }
+
+    private func stringValue(_ value: Any?) -> String {
+        guard let value else { return "nil" }
+        if let value = value as? String {
+            return value.isEmpty ? "empty" : value
+        }
+        if let value = value as? Bool {
+            return value ? "true" : "false"
+        }
+        return String(describing: value)
     }
 
     private func decoderMetadataStatusText(for result: ALVRDecoderMetadataScanResult) -> String {

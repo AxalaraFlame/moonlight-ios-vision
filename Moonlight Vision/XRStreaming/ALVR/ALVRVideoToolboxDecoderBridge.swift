@@ -42,6 +42,18 @@ struct ALVRVideoToolboxDecodeResult: Sendable {
     let isMetalCompatible: Bool?
     let metalCompatibilityHint: String?
     let timestampNs: UInt64
+    let fedFrameNalTypes: [String]
+    let fedFrameWasRandomAccess: Bool
+    let copiedFramePrefixHex: String?
+    let convertedLengthPrefixedPrefixHex: String?
+    let usedSyntheticPts: Bool
+    let samplePtsDescription: String
+    let annexBNalCount: Int
+    let convertedNalCount: Int
+    let convertedSampleSize: Int
+    let firstConvertedNalLength: Int?
+    let conversionError: String?
+    let didWaitForAsynchronousFrames: Bool
     let errorDescription: String?
     let messages: [String]
 }
@@ -49,7 +61,11 @@ struct ALVRVideoToolboxDecodeResult: Sendable {
 struct ALVRVideoToolboxFrameFeedSummary: Sendable {
     let feedEnabled: Bool
     let copiedFrameCount: Int
+    let copiedIdrFrameCount: Int
+    let copiedCraFrameCount: Int
     let submittedFrameCount: Int
+    let submittedIdrFrameCount: Int
+    let submittedCraFrameCount: Int
     let decodedFrameCount: Int
     let lastDecodeCallStatus: OSStatus?
     let lastCallbackStatus: OSStatus?
@@ -64,6 +80,18 @@ struct ALVRVideoToolboxFrameFeedSummary: Sendable {
     let lastMetalCompatibilityHint: String?
     let hasLatestDecodedPixelBufferSnapshot: Bool
     let lastDecodedTimestampNs: UInt64?
+    let fedFrameNalTypes: [String]
+    let fedFrameWasRandomAccess: Bool
+    let copiedFramePrefixHex: String?
+    let convertedLengthPrefixedPrefixHex: String?
+    let usedSyntheticPts: Bool
+    let samplePtsDescription: String?
+    let annexBNalCount: Int
+    let convertedNalCount: Int
+    let convertedSampleSize: Int
+    let firstConvertedNalLength: Int?
+    let conversionError: String?
+    let didWaitForAsynchronousFrames: Bool
     let decodeErrors: [String]
     let didCallAlvrReportFrameDecoded: Bool
     let messages: [String]
@@ -74,10 +102,15 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
     private var formatDescription: CMVideoFormatDescription?
     private var decompressionSession: VTDecompressionSession?
     private var latestDecodedPixelBuffer: CVPixelBuffer?
+    private var syntheticFrameIndex: Int64 = 0
     private var frameFeedSummary = ALVRVideoToolboxFrameFeedSummary(
         feedEnabled: false,
         copiedFrameCount: 0,
+        copiedIdrFrameCount: 0,
+        copiedCraFrameCount: 0,
         submittedFrameCount: 0,
+        submittedIdrFrameCount: 0,
+        submittedCraFrameCount: 0,
         decodedFrameCount: 0,
         lastDecodeCallStatus: nil,
         lastCallbackStatus: nil,
@@ -92,6 +125,18 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         lastMetalCompatibilityHint: nil,
         hasLatestDecodedPixelBufferSnapshot: false,
         lastDecodedTimestampNs: nil,
+        fedFrameNalTypes: [],
+        fedFrameWasRandomAccess: false,
+        copiedFramePrefixHex: nil,
+        convertedLengthPrefixedPrefixHex: nil,
+        usedSyntheticPts: false,
+        samplePtsDescription: nil,
+        annexBNalCount: 0,
+        convertedNalCount: 0,
+        convertedSampleSize: 0,
+        firstConvertedNalLength: nil,
+        conversionError: nil,
+        didWaitForAsynchronousFrames: false,
         decodeErrors: [],
         didCallAlvrReportFrameDecoded: false,
         messages: []
@@ -258,7 +303,11 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         frameFeedSummary = ALVRVideoToolboxFrameFeedSummary(
             feedEnabled: feedEnabled,
             copiedFrameCount: 0,
+            copiedIdrFrameCount: 0,
+            copiedCraFrameCount: 0,
             submittedFrameCount: 0,
+            submittedIdrFrameCount: 0,
+            submittedCraFrameCount: 0,
             decodedFrameCount: 0,
             lastDecodeCallStatus: nil,
             lastCallbackStatus: nil,
@@ -273,11 +322,24 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             lastMetalCompatibilityHint: nil,
             hasLatestDecodedPixelBufferSnapshot: false,
             lastDecodedTimestampNs: nil,
+            fedFrameNalTypes: [],
+            fedFrameWasRandomAccess: false,
+            copiedFramePrefixHex: nil,
+            convertedLengthPrefixedPrefixHex: nil,
+            usedSyntheticPts: false,
+            samplePtsDescription: nil,
+            annexBNalCount: 0,
+            convertedNalCount: 0,
+            convertedSampleSize: 0,
+            firstConvertedNalLength: nil,
+            conversionError: nil,
+            didWaitForAsynchronousFrames: false,
             decodeErrors: [],
             didCallAlvrReportFrameDecoded: false,
-            messages: feedEnabled ? ["HEVC frame feed smoke test enabled."] : []
+            messages: feedEnabled ? ["HEVC frame feed smoke test enabled; waiting for IDR/CRA frame."] : []
         )
         latestDecodedPixelBuffer = nil
+        syntheticFrameIndex = 0
     }
 
     func frameFeedSummarySnapshot() -> ALVRVideoToolboxFrameFeedSummary {
@@ -287,14 +349,21 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         return frameFeedSummary
     }
 
-    func feedAnnexBHEVCFrame(_ frameData: Data, timestampNs: UInt64) -> ALVRVideoToolboxDecodeResult {
+    func feedAnnexBHEVCFrame(_ copiedFrame: ALVRDecoderCopiedFrame) -> ALVRVideoToolboxDecodeResult {
         let session: VTDecompressionSession
         let activeFormatDescription: CMVideoFormatDescription
+        let timestampNs = copiedFrame.timestampNs
+        let isRandomAccessFrame = copiedFrame.containsIDR || copiedFrame.containsCRA
 
         lock.lock()
         frameFeedSummary = Self.updatedSummary(frameFeedSummary) { summary in
             summary.copiedFrameCount += 1
-            summary.messages.append("Copied HEVC frame for decode smoke test at \(timestampNs).")
+            summary.copiedIdrFrameCount += copiedFrame.containsIDR ? 1 : 0
+            summary.copiedCraFrameCount += copiedFrame.containsCRA ? 1 : 0
+            summary.fedFrameNalTypes = copiedFrame.nalTypes
+            summary.fedFrameWasRandomAccess = isRandomAccessFrame
+            summary.copiedFramePrefixHex = copiedFrame.prefixHex
+            summary.messages.append("Copied HEVC \(isRandomAccessFrame ? "IDR/CRA" : "ordinary") frame for decode smoke test at \(timestampNs).")
         }
         guard let decompressionSession, let formatDescription else {
             let error = "HEVC VTDecompressionSession is not available."
@@ -318,6 +387,18 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
                 isMetalCompatible: nil,
                 metalCompatibilityHint: nil,
                 timestampNs: timestampNs,
+                fedFrameNalTypes: copiedFrame.nalTypes,
+                fedFrameWasRandomAccess: isRandomAccessFrame,
+                copiedFramePrefixHex: copiedFrame.prefixHex,
+                convertedLengthPrefixedPrefixHex: nil,
+                usedSyntheticPts: false,
+                samplePtsDescription: "not submitted",
+                annexBNalCount: 0,
+                convertedNalCount: 0,
+                convertedSampleSize: 0,
+                firstConvertedNalLength: nil,
+                conversionError: nil,
+                didWaitForAsynchronousFrames: false,
                 errorDescription: error,
                 messages: [error]
             )
@@ -327,14 +408,15 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         lock.unlock()
 
         var messages = ["Converting Annex-B HEVC frame to length-prefixed sample."]
-        let convertedFrame: Data
+        let conversion: FrameConversionResult
         do {
-            convertedFrame = try Self.convertAnnexBToLengthPrefixed(frameData)
+            conversion = try Self.convertAnnexBToLengthPrefixed(copiedFrame.data)
         } catch {
             let errorDescription = error.localizedDescription
             lock.lock()
             frameFeedSummary = Self.updatedSummary(frameFeedSummary) { summary in
                 summary.decodeErrors.append(errorDescription)
+                summary.conversionError = errorDescription
             }
             lock.unlock()
             return ALVRVideoToolboxDecodeResult(
@@ -353,14 +435,72 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
                 isMetalCompatible: nil,
                 metalCompatibilityHint: nil,
                 timestampNs: timestampNs,
+                fedFrameNalTypes: copiedFrame.nalTypes,
+                fedFrameWasRandomAccess: isRandomAccessFrame,
+                copiedFramePrefixHex: copiedFrame.prefixHex,
+                convertedLengthPrefixedPrefixHex: nil,
+                usedSyntheticPts: false,
+                samplePtsDescription: "conversion failed",
+                annexBNalCount: 0,
+                convertedNalCount: 0,
+                convertedSampleSize: 0,
+                firstConvertedNalLength: nil,
+                conversionError: errorDescription,
+                didWaitForAsynchronousFrames: false,
                 errorDescription: errorDescription,
                 messages: messages + [errorDescription]
             )
         }
+        messages.append("Converted \(conversion.nalCount) Annex-B NAL units into a \(conversion.data.count)-byte length-prefixed sample.")
+
+        guard !conversion.data.isEmpty else {
+            let error = "Converted HEVC sample was empty."
+            lock.lock()
+            frameFeedSummary = Self.updatedSummary(frameFeedSummary) { summary in
+                summary.decodeErrors.append(error)
+                summary.conversionError = error
+            }
+            lock.unlock()
+            return ALVRVideoToolboxDecodeResult(
+                success: false,
+                submitted: false,
+                decodeCallStatus: -1,
+                callbackStatus: nil,
+                infoFlagsRawValue: nil,
+                imageBufferReceived: false,
+                pixelBufferWidth: nil,
+                pixelBufferHeight: nil,
+                pixelFormat: nil,
+                planeCount: nil,
+                bytesPerRowByPlane: [],
+                hasIOSurface: nil,
+                isMetalCompatible: nil,
+                metalCompatibilityHint: nil,
+                timestampNs: timestampNs,
+                fedFrameNalTypes: copiedFrame.nalTypes,
+                fedFrameWasRandomAccess: isRandomAccessFrame,
+                copiedFramePrefixHex: copiedFrame.prefixHex,
+                convertedLengthPrefixedPrefixHex: nil,
+                usedSyntheticPts: false,
+                samplePtsDescription: "empty converted sample",
+                annexBNalCount: conversion.nalCount,
+                convertedNalCount: conversion.nalCount,
+                convertedSampleSize: 0,
+                firstConvertedNalLength: conversion.firstNalLength,
+                conversionError: error,
+                didWaitForAsynchronousFrames: false,
+                errorDescription: error,
+                messages: messages + [error]
+            )
+        }
+
+        let timing = nextSampleTiming(timestampNs: timestampNs)
 
         guard let sampleBuffer = Self.createSampleBuffer(
-            from: convertedFrame,
-            formatDescription: activeFormatDescription
+            from: conversion.data,
+            formatDescription: activeFormatDescription,
+            timing: timing.timing,
+            isRandomAccess: isRandomAccessFrame
         ) else {
             let error = "Failed to create CMSampleBuffer for HEVC frame."
             lock.lock()
@@ -384,24 +524,41 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
                 isMetalCompatible: nil,
                 metalCompatibilityHint: nil,
                 timestampNs: timestampNs,
+                fedFrameNalTypes: copiedFrame.nalTypes,
+                fedFrameWasRandomAccess: isRandomAccessFrame,
+                copiedFramePrefixHex: copiedFrame.prefixHex,
+                convertedLengthPrefixedPrefixHex: conversion.prefixHex,
+                usedSyntheticPts: timing.usedSyntheticPts,
+                samplePtsDescription: timing.description,
+                annexBNalCount: conversion.nalCount,
+                convertedNalCount: conversion.nalCount,
+                convertedSampleSize: conversion.data.count,
+                firstConvertedNalLength: conversion.firstNalLength,
+                conversionError: nil,
+                didWaitForAsynchronousFrames: false,
                 errorDescription: error,
                 messages: messages + [error]
             )
         }
-        messages.append("Created CMSampleBuffer for HEVC frame.")
+        messages.append("Created CMSampleBuffer for HEVC frame with PTS \(timing.description).")
+        messages.append(isRandomAccessFrame ? "Marked sample as sync/random access." : "Marked sample as non-sync ordinary slice.")
 
         let semaphore = DispatchSemaphore(value: 0)
         let callbackState = DecodeCallbackState()
+        var infoFlagsOut = VTDecodeInfoFlags()
 
         let decodeCallStatus = VTDecompressionSessionDecodeFrame(
             session,
             sampleBuffer: sampleBuffer,
             flags: VTDecodeFrameFlags(rawValue: 0),
-            infoFlagsOut: nil
+            infoFlagsOut: &infoFlagsOut
         ) { status, infoFlags, imageBuffer, _, _, _ in
             callbackState.record(status: status, infoFlags: infoFlags, imageBuffer: imageBuffer)
             semaphore.signal()
         }
+
+        VTDecompressionSessionWaitForAsynchronousFrames(session)
+        messages.append("Called VTDecompressionSessionWaitForAsynchronousFrames.")
 
         let didReceiveCallback = semaphore.wait(timeout: .now() + .milliseconds(250)) == .success
         let callbackSnapshot = callbackState.snapshot()
@@ -422,10 +579,12 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         lock.lock()
         frameFeedSummary = Self.updatedSummary(frameFeedSummary) { summary in
             summary.submittedFrameCount += decodeCallStatus == noErr ? 1 : 0
+            summary.submittedIdrFrameCount += decodeCallStatus == noErr && copiedFrame.containsIDR ? 1 : 0
+            summary.submittedCraFrameCount += decodeCallStatus == noErr && copiedFrame.containsCRA ? 1 : 0
             summary.decodedFrameCount += success ? 1 : 0
             summary.lastDecodeCallStatus = decodeCallStatus
             summary.lastCallbackStatus = callbackSnapshot.status
-            summary.lastInfoFlagsRawValue = callbackSnapshot.infoFlagsRawValue
+            summary.lastInfoFlagsRawValue = callbackSnapshot.infoFlagsRawValue ?? infoFlagsOut.rawValue
             summary.lastPixelBufferWidth = callbackSnapshot.pixelBufferWidth
             summary.lastPixelBufferHeight = callbackSnapshot.pixelBufferHeight
             summary.lastPixelFormat = callbackSnapshot.pixelFormat
@@ -436,6 +595,18 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             summary.lastMetalCompatibilityHint = callbackSnapshot.metalCompatibilityHint
             summary.hasLatestDecodedPixelBufferSnapshot = success && callbackSnapshot.latestDecodedPixelBuffer != nil
             summary.lastDecodedTimestampNs = success ? timestampNs : summary.lastDecodedTimestampNs
+            summary.fedFrameNalTypes = copiedFrame.nalTypes
+            summary.fedFrameWasRandomAccess = isRandomAccessFrame
+            summary.copiedFramePrefixHex = copiedFrame.prefixHex
+            summary.convertedLengthPrefixedPrefixHex = conversion.prefixHex
+            summary.usedSyntheticPts = timing.usedSyntheticPts
+            summary.samplePtsDescription = timing.description
+            summary.annexBNalCount = conversion.nalCount
+            summary.convertedNalCount = conversion.nalCount
+            summary.convertedSampleSize = conversion.data.count
+            summary.firstConvertedNalLength = conversion.firstNalLength
+            summary.conversionError = nil
+            summary.didWaitForAsynchronousFrames = true
             summary.messages.append(contentsOf: messages)
             if let errorDescription {
                 summary.decodeErrors.append(errorDescription)
@@ -462,6 +633,18 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             isMetalCompatible: callbackSnapshot.isMetalCompatible,
             metalCompatibilityHint: callbackSnapshot.metalCompatibilityHint,
             timestampNs: timestampNs,
+            fedFrameNalTypes: copiedFrame.nalTypes,
+            fedFrameWasRandomAccess: isRandomAccessFrame,
+            copiedFramePrefixHex: copiedFrame.prefixHex,
+            convertedLengthPrefixedPrefixHex: conversion.prefixHex,
+            usedSyntheticPts: timing.usedSyntheticPts,
+            samplePtsDescription: timing.description,
+            annexBNalCount: conversion.nalCount,
+            convertedNalCount: conversion.nalCount,
+            convertedSampleSize: conversion.data.count,
+            firstConvertedNalLength: conversion.firstNalLength,
+            conversionError: nil,
+            didWaitForAsynchronousFrames: true,
             errorDescription: errorDescription,
             messages: messages
         )
@@ -486,7 +669,11 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
     private struct MutableFrameFeedSummary {
         var feedEnabled: Bool
         var copiedFrameCount: Int
+        var copiedIdrFrameCount: Int
+        var copiedCraFrameCount: Int
         var submittedFrameCount: Int
+        var submittedIdrFrameCount: Int
+        var submittedCraFrameCount: Int
         var decodedFrameCount: Int
         var lastDecodeCallStatus: OSStatus?
         var lastCallbackStatus: OSStatus?
@@ -501,6 +688,18 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         var lastMetalCompatibilityHint: String?
         var hasLatestDecodedPixelBufferSnapshot: Bool
         var lastDecodedTimestampNs: UInt64?
+        var fedFrameNalTypes: [String]
+        var fedFrameWasRandomAccess: Bool
+        var copiedFramePrefixHex: String?
+        var convertedLengthPrefixedPrefixHex: String?
+        var usedSyntheticPts: Bool
+        var samplePtsDescription: String?
+        var annexBNalCount: Int
+        var convertedNalCount: Int
+        var convertedSampleSize: Int
+        var firstConvertedNalLength: Int?
+        var conversionError: String?
+        var didWaitForAsynchronousFrames: Bool
         var decodeErrors: [String]
         var didCallAlvrReportFrameDecoded: Bool
         var messages: [String]
@@ -587,7 +786,11 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         var mutable = MutableFrameFeedSummary(
             feedEnabled: summary.feedEnabled,
             copiedFrameCount: summary.copiedFrameCount,
+            copiedIdrFrameCount: summary.copiedIdrFrameCount,
+            copiedCraFrameCount: summary.copiedCraFrameCount,
             submittedFrameCount: summary.submittedFrameCount,
+            submittedIdrFrameCount: summary.submittedIdrFrameCount,
+            submittedCraFrameCount: summary.submittedCraFrameCount,
             decodedFrameCount: summary.decodedFrameCount,
             lastDecodeCallStatus: summary.lastDecodeCallStatus,
             lastCallbackStatus: summary.lastCallbackStatus,
@@ -602,6 +805,18 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             lastMetalCompatibilityHint: summary.lastMetalCompatibilityHint,
             hasLatestDecodedPixelBufferSnapshot: summary.hasLatestDecodedPixelBufferSnapshot,
             lastDecodedTimestampNs: summary.lastDecodedTimestampNs,
+            fedFrameNalTypes: summary.fedFrameNalTypes,
+            fedFrameWasRandomAccess: summary.fedFrameWasRandomAccess,
+            copiedFramePrefixHex: summary.copiedFramePrefixHex,
+            convertedLengthPrefixedPrefixHex: summary.convertedLengthPrefixedPrefixHex,
+            usedSyntheticPts: summary.usedSyntheticPts,
+            samplePtsDescription: summary.samplePtsDescription,
+            annexBNalCount: summary.annexBNalCount,
+            convertedNalCount: summary.convertedNalCount,
+            convertedSampleSize: summary.convertedSampleSize,
+            firstConvertedNalLength: summary.firstConvertedNalLength,
+            conversionError: summary.conversionError,
+            didWaitForAsynchronousFrames: summary.didWaitForAsynchronousFrames,
             decodeErrors: summary.decodeErrors,
             didCallAlvrReportFrameDecoded: summary.didCallAlvrReportFrameDecoded,
             messages: summary.messages
@@ -610,7 +825,11 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         return ALVRVideoToolboxFrameFeedSummary(
             feedEnabled: mutable.feedEnabled,
             copiedFrameCount: mutable.copiedFrameCount,
+            copiedIdrFrameCount: mutable.copiedIdrFrameCount,
+            copiedCraFrameCount: mutable.copiedCraFrameCount,
             submittedFrameCount: mutable.submittedFrameCount,
+            submittedIdrFrameCount: mutable.submittedIdrFrameCount,
+            submittedCraFrameCount: mutable.submittedCraFrameCount,
             decodedFrameCount: mutable.decodedFrameCount,
             lastDecodeCallStatus: mutable.lastDecodeCallStatus,
             lastCallbackStatus: mutable.lastCallbackStatus,
@@ -625,6 +844,18 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             lastMetalCompatibilityHint: mutable.lastMetalCompatibilityHint,
             hasLatestDecodedPixelBufferSnapshot: mutable.hasLatestDecodedPixelBufferSnapshot,
             lastDecodedTimestampNs: mutable.lastDecodedTimestampNs,
+            fedFrameNalTypes: mutable.fedFrameNalTypes,
+            fedFrameWasRandomAccess: mutable.fedFrameWasRandomAccess,
+            copiedFramePrefixHex: mutable.copiedFramePrefixHex,
+            convertedLengthPrefixedPrefixHex: mutable.convertedLengthPrefixedPrefixHex,
+            usedSyntheticPts: mutable.usedSyntheticPts,
+            samplePtsDescription: mutable.samplePtsDescription,
+            annexBNalCount: mutable.annexBNalCount,
+            convertedNalCount: mutable.convertedNalCount,
+            convertedSampleSize: mutable.convertedSampleSize,
+            firstConvertedNalLength: mutable.firstConvertedNalLength,
+            conversionError: mutable.conversionError,
+            didWaitForAsynchronousFrames: mutable.didWaitForAsynchronousFrames,
             decodeErrors: mutable.decodeErrors,
             didCallAlvrReportFrameDecoded: mutable.didCallAlvrReportFrameDecoded,
             messages: mutable.messages
@@ -642,7 +873,49 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         }
     }
 
-    private static func convertAnnexBToLengthPrefixed(_ frameData: Data) throws -> Data {
+    private struct FrameConversionResult {
+        let data: Data
+        let nalCount: Int
+        let firstNalLength: Int?
+        let prefixHex: String?
+    }
+
+    private struct SampleTimingResult {
+        let timing: CMSampleTimingInfo
+        let usedSyntheticPts: Bool
+        let description: String
+    }
+
+    private func nextSampleTiming(timestampNs: UInt64) -> SampleTimingResult {
+        if timestampNs > 0 {
+            return SampleTimingResult(
+                timing: CMSampleTimingInfo(
+                    duration: CMTime.invalid,
+                    presentationTimeStamp: CMTime(value: CMTimeValue(timestampNs), timescale: 1_000_000_000),
+                    decodeTimeStamp: CMTime.invalid
+                ),
+                usedSyntheticPts: false,
+                description: "\(timestampNs) ns"
+            )
+        }
+
+        lock.lock()
+        syntheticFrameIndex += 1
+        let frameIndex = syntheticFrameIndex
+        lock.unlock()
+
+        return SampleTimingResult(
+            timing: CMSampleTimingInfo(
+                duration: CMTime.invalid,
+                presentationTimeStamp: CMTime(value: frameIndex, timescale: 90),
+                decodeTimeStamp: CMTime.invalid
+            ),
+            usedSyntheticPts: true,
+            description: "synthetic frame \(frameIndex) at 90 fps"
+        )
+    }
+
+    private static func convertAnnexBToLengthPrefixed(_ frameData: Data) throws -> FrameConversionResult {
         let bytes = [UInt8](frameData)
         let ranges = annexBNalRanges(in: bytes)
         guard !ranges.isEmpty else {
@@ -651,9 +924,13 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
 
         var converted = Data()
         converted.reserveCapacity(frameData.count)
+        var firstNalLength: Int?
 
         for range in ranges {
             let length = UInt32(range.count)
+            if firstNalLength == nil {
+                firstNalLength = range.count
+            }
             converted.append(UInt8((length >> 24) & 0xFF))
             converted.append(UInt8((length >> 16) & 0xFF))
             converted.append(UInt8((length >> 8) & 0xFF))
@@ -661,7 +938,12 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             converted.append(contentsOf: bytes[range])
         }
 
-        return converted
+        return FrameConversionResult(
+            data: converted,
+            nalCount: ranges.count,
+            firstNalLength: firstNalLength,
+            prefixHex: prefixHex(for: converted, byteCount: 32)
+        )
     }
 
     private static func annexBNalRanges(in bytes: [UInt8]) -> [Range<Int>] {
@@ -699,7 +981,9 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
 
     private static func createSampleBuffer(
         from convertedFrame: Data,
-        formatDescription: CMVideoFormatDescription
+        formatDescription: CMVideoFormatDescription,
+        timing: CMSampleTimingInfo,
+        isRandomAccess: Bool
     ) -> CMSampleBuffer? {
         var blockBuffer: CMBlockBuffer?
         var status = CMBlockBufferCreateWithMemoryBlock(
@@ -735,14 +1019,15 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
         }
 
         var sampleSize = convertedFrame.count
+        var sampleTiming = timing
         var sampleBuffer: CMSampleBuffer?
         status = CMSampleBufferCreateReady(
             allocator: nil,
             dataBuffer: blockBuffer,
             formatDescription: formatDescription,
             sampleCount: 1,
-            sampleTimingEntryCount: 0,
-            sampleTimingArray: nil,
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: &sampleTiming,
             sampleSizeEntryCount: 1,
             sampleSizeArray: &sampleSize,
             sampleBufferOut: &sampleBuffer
@@ -752,7 +1037,22 @@ final class ALVRVideoToolboxDecoderBridge: @unchecked Sendable {
             return nil
         }
 
+        if let sampleBuffer,
+           let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: true),
+           CFArrayGetCount(attachments) > 0 {
+            let attachment = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
+            CFDictionarySetValue(
+                attachment,
+                Unmanaged.passUnretained(kCMSampleAttachmentKey_NotSync).toOpaque(),
+                Unmanaged.passUnretained(isRandomAccess ? kCFBooleanFalse : kCFBooleanTrue).toOpaque()
+            )
+        }
+
         return sampleBuffer
+    }
+
+    private static func prefixHex(for data: Data, byteCount: Int) -> String {
+        data.prefix(byteCount).map { String(format: "%02X", $0) }.joined(separator: " ")
     }
 
     private static func pixelFormatDescription(_ pixelFormat: OSType) -> String {

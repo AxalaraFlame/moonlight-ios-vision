@@ -96,6 +96,31 @@ struct ALVRDecoderMetadataSnapshot: Sendable {
     let hevcPpsData: [UInt8]
     let h264SpsData: [UInt8]
     let h264PpsData: [UInt8]
+    let keyframeRequestPending: Bool
+    let keyframeRequestTriggered: Bool
+    let keyframeRequestCount: Int
+    let framesSinceKeyframeRequest: Int
+    let secondsSinceKeyframeRequest: Double?
+    let keyframeRequestMessage: String?
+    let decodeTestIdrRequestPending: Bool
+    let decodeTestIdrRequestTriggered: Bool
+    let decodeTestIdrRequestCount: Int
+    let framesSinceDecodeTestIdrRequest: Int
+    let secondsSinceDecodeTestIdrRequest: Double?
+    let decodeTestIdrRequestMessage: String?
+    let frameFeedTestEnabled: Bool
+    let frameFeedWaitingForIdr: Bool
+    let frameFeedCanCopyFrames: Bool
+    let frameFeedDisabledReason: String?
+    let frameFeedLastSkipReason: String?
+    let frameFeedCopiedAfterIdrRequest: Bool
+    let frameFeedStartedAtFrameCount: Int?
+    let feedCallbackSeenFrameCount: Int
+    let feedCallbackSawIdrOrCraCount: Int
+    let feedCallbackLastNalTypes: [String]
+    let feedCallbackLastDecision: String?
+    let feedCallbackLastSkipReason: String?
+    let pendingDecodeFrameCount: Int
     let messages: [String]
 }
 
@@ -156,6 +181,9 @@ struct ALVRDecoderCopiedFrame: Sendable {
     let data: Data
     let timestampNs: UInt64
     let containsIDR: Bool
+    let containsCRA: Bool
+    let nalTypes: [String]
+    let prefixHex: String?
 }
 
 final class ALVRDecoderMetadataCollector: @unchecked Sendable {
@@ -215,8 +243,30 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
     private var frameFeedSink: ((ALVRDecoderCopiedFrame) -> Void)?
     private var frameFeedCopiedCount = 0
     private var frameFeedInspectedCount = 0
+    private var frameFeedStartedAtFrameCount: Int?
+    private var frameFeedLastSkipReason: String?
+    private var frameFeedCopiedAfterIdrRequest = false
+    private var feedCallbackSeenFrameCount = 0
+    private var feedCallbackSawIdrOrCraCount = 0
+    private var feedCallbackLastNalTypes: [String] = []
+    private var feedCallbackLastDecision: String?
+    private var feedCallbackLastSkipReason: String?
+    private var pendingDecodeFrames: [ALVRDecoderCopiedFrame] = []
     private let frameFeedMaxFrames = 3
+    private let maxPendingDecodeFrames = 3
     private let frameFeedMaxFrameSize: UInt64 = 2 * 1024 * 1024
+    private var keyframeRequestPending = false
+    private var keyframeRequestTriggered = false
+    private var keyframeRequestCount = 0
+    private var keyframeRequestFrameBaseline = 0
+    private var keyframeRequestStartedAt: Date?
+    private var keyframeRequestMessage: String?
+    private var decodeTestIdrRequestPending = false
+    private var decodeTestIdrRequestTriggered = false
+    private var decodeTestIdrRequestCount = 0
+    private var decodeTestIdrRequestFrameBaseline = 0
+    private var decodeTestIdrRequestStartedAt: Date?
+    private var decodeTestIdrRequestMessage: String?
 
     func reset() {
         lock.lock()
@@ -254,6 +304,27 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
         frameFeedSink = nil
         frameFeedCopiedCount = 0
         frameFeedInspectedCount = 0
+        frameFeedStartedAtFrameCount = nil
+        frameFeedLastSkipReason = nil
+        frameFeedCopiedAfterIdrRequest = false
+        feedCallbackSeenFrameCount = 0
+        feedCallbackSawIdrOrCraCount = 0
+        feedCallbackLastNalTypes = []
+        feedCallbackLastDecision = nil
+        feedCallbackLastSkipReason = nil
+        pendingDecodeFrames = []
+        keyframeRequestPending = false
+        keyframeRequestTriggered = false
+        keyframeRequestCount = 0
+        keyframeRequestFrameBaseline = 0
+        keyframeRequestStartedAt = nil
+        keyframeRequestMessage = nil
+        decodeTestIdrRequestPending = false
+        decodeTestIdrRequestTriggered = false
+        decodeTestIdrRequestCount = 0
+        decodeTestIdrRequestFrameBaseline = 0
+        decodeTestIdrRequestStartedAt = nil
+        decodeTestIdrRequestMessage = nil
     }
 
     func start() {
@@ -270,6 +341,7 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
 
         isActive = false
         frameFeedSink = nil
+        pendingDecodeFrames = []
         messages.append("Decoder metadata collector stopped")
     }
 
@@ -280,26 +352,91 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
         frameFeedSink = sink
         frameFeedCopiedCount = 0
         frameFeedInspectedCount = 0
+        frameFeedLastSkipReason = nil
+        frameFeedCopiedAfterIdrRequest = false
+        feedCallbackSeenFrameCount = 0
+        feedCallbackSawIdrOrCraCount = 0
+        feedCallbackLastNalTypes = []
+        feedCallbackLastDecision = sink == nil ? "disabled" : "enabled"
+        feedCallbackLastSkipReason = nil
+        pendingDecodeFrames = []
         if sink == nil {
+            frameFeedStartedAtFrameCount = nil
             messages.append("HEVC frame feed smoke test disabled")
         } else {
-            messages.append("HEVC frame feed smoke test enabled; will copy at most 3 frames")
+            frameFeedStartedAtFrameCount = frameCount
+            messages.append("HEVC frame feed smoke test enabled; will copy at most 3 IDR/CRA frames")
         }
     }
 
-    func record(frameData: AlvrVideoFrameData) {
+    func requestKeyframeParameterSetsOnce() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard keyframeRequestCount == 0, !keyframeRequestPending, !keyframeRequestTriggered else {
+            return false
+        }
+
+        keyframeRequestPending = true
+        keyframeRequestCount = 1
+        keyframeRequestFrameBaseline = frameCount
+        keyframeRequestStartedAt = Date()
+        keyframeRequestMessage = "Will return false once from decoder callback to request keyframe / parameter sets."
+        messages.append("Keyframe / parameter set request armed; next decoder callback will return false once.")
+        return true
+    }
+
+    func requestDecodeTestIdrOnce() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard decodeTestIdrRequestCount == 0,
+              !decodeTestIdrRequestPending,
+              !decodeTestIdrRequestTriggered,
+              !keyframeRequestPending else {
+            return false
+        }
+
+        decodeTestIdrRequestPending = true
+        decodeTestIdrRequestCount = 1
+        decodeTestIdrRequestFrameBaseline = frameCount
+        decodeTestIdrRequestStartedAt = Date()
+        decodeTestIdrRequestMessage = "Will return false once from decoder callback to request a new IDR/CRA for the decode smoke test."
+        messages.append("Decode-test IDR request armed; next decoder callback will return false once.")
+        return true
+    }
+
+    func takePendingDecodeFrames(limit: Int = 3) -> [ALVRDecoderCopiedFrame] {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !pendingDecodeFrames.isEmpty else {
+            return []
+        }
+
+        let count = min(limit, pendingDecodeFrames.count)
+        let frames = Array(pendingDecodeFrames.prefix(count))
+        pendingDecodeFrames.removeFirst(count)
+        return frames
+    }
+
+    func record(frameData: AlvrVideoFrameData) -> Bool {
         let bufferSize = frameData.buffer_size
         let timestamp = frameData.timestamp_ns
         let prefixHex = Self.prefixHex(bufferPointer: frameData.buffer_ptr, bufferSize: bufferSize)
         let nalScanResult = Self.scanNalUnits(bufferPointer: frameData.buffer_ptr, bufferSize: bufferSize)
         var frameFeedSinkToCall: ((ALVRDecoderCopiedFrame) -> Void)?
         var shouldCopyFrameForFeed = false
-        let containsIDR = nalScanResult.hevcIdrCount > 0 || nalScanResult.hevcCraCount > 0 || nalScanResult.h264IdrCount > 0
+        var shouldContinueDecoding = true
+        let containsIDR = nalScanResult.hevcIdrCount > 0 || nalScanResult.h264IdrCount > 0
+        let containsCRA = nalScanResult.hevcCraCount > 0
+        var copiedFrameForQueue: ALVRDecoderCopiedFrame?
+        var copyFailureReason: String?
 
         lock.lock()
         guard isActive else {
             lock.unlock()
-            return
+            return true
         }
 
         frameCount += 1
@@ -353,20 +490,74 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
             messages.append("Received decoder frame with nil buffer at \(timestamp)")
         }
 
-        if let frameFeedSink,
-           frameFeedCopiedCount < frameFeedMaxFrames,
-           frameData.buffer_ptr != nil,
-           bufferSize > 0,
-           bufferSize <= frameFeedMaxFrameSize {
+        let isRandomAccessFrame = containsIDR || containsCRA
+        if frameFeedSink != nil {
+            feedCallbackSeenFrameCount += 1
+            feedCallbackLastNalTypes = nalScanResult.firstNalTypes
+            if isRandomAccessFrame {
+                feedCallbackSawIdrOrCraCount += 1
+            }
             frameFeedInspectedCount += 1
-            let shouldPreferIDR = containsIDR
-            let shouldFallbackAfterWarmup = frameFeedInspectedCount > 30 || frameFeedCopiedCount > 0
-            if shouldPreferIDR || shouldFallbackAfterWarmup {
-                frameFeedCopiedCount += 1
+
+            if !isRandomAccessFrame {
+                feedCallbackLastDecision = "skipped: no IDR/CRA"
+                feedCallbackLastSkipReason = "no IDR/CRA"
+                frameFeedLastSkipReason = "waitingForIdrOrCra"
+                if nalScanResult.hevcSliceCount > 0, frameFeedCopiedCount == 0, frameFeedInspectedCount % 60 == 0 {
+                    messages.append("Observed ordinary HEVC slice while waiting for IDR/CRA frame; not submitting to VideoToolbox.")
+                }
+            } else if frameFeedCopiedCount >= frameFeedMaxFrames {
+                feedCallbackLastDecision = "skipped: copy limit reached"
+                feedCallbackLastSkipReason = "copiedFrameLimitReached"
+                frameFeedLastSkipReason = "copiedFrameLimitReached"
+                messages.append("Saw HEVC IDR/CRA but did not copy it because the frame copy limit was reached.")
+            } else if pendingDecodeFrames.count >= maxPendingDecodeFrames {
+                feedCallbackLastDecision = "skipped: pending queue full"
+                feedCallbackLastSkipReason = "pendingDecodeFrameQueueFull"
+                frameFeedLastSkipReason = "pendingDecodeFrameQueueFull"
+                messages.append("Saw HEVC IDR/CRA but did not copy it because the pending decode frame queue was full.")
+            } else if frameData.buffer_ptr == nil {
+                feedCallbackLastDecision = "skipped: nil buffer_ptr"
+                feedCallbackLastSkipReason = "nil buffer_ptr"
+                frameFeedLastSkipReason = "nil buffer_ptr"
+                messages.append("Saw HEVC IDR/CRA but did not copy it because buffer_ptr was nil.")
+            } else if bufferSize == 0 {
+                feedCallbackLastDecision = "skipped: zero-byte frame"
+                feedCallbackLastSkipReason = "zero-byte frame"
+                frameFeedLastSkipReason = "zero-byte frame"
+                messages.append("Saw HEVC IDR/CRA but did not copy it because the frame was zero bytes.")
+            } else if bufferSize > frameFeedMaxFrameSize {
+                let reason = "frameTooLarge \(bufferSize) > \(frameFeedMaxFrameSize)"
+                feedCallbackLastDecision = "skipped: frame too large"
+                feedCallbackLastSkipReason = reason
+                frameFeedLastSkipReason = reason
+                messages.append("Saw HEVC IDR/CRA but did not copy it because the frame was too large: \(bufferSize) bytes.")
+            } else {
                 shouldCopyFrameForFeed = true
                 frameFeedSinkToCall = frameFeedSink
-                messages.append("Copying HEVC frame \(frameFeedCopiedCount) for VideoToolbox feed smoke test at \(timestamp)")
+                feedCallbackLastDecision = "copying"
+                feedCallbackLastSkipReason = nil
             }
+        } else if isRandomAccessFrame {
+            feedCallbackLastNalTypes = nalScanResult.firstNalTypes
+            feedCallbackLastDecision = "skipped: feed test disabled"
+            feedCallbackLastSkipReason = "feedTestEnabled=false"
+            frameFeedLastSkipReason = "feedTestEnabled=false"
+            messages.append("Saw HEVC IDR/CRA but did not copy it because feed test is disabled.")
+        }
+
+        if keyframeRequestPending {
+            keyframeRequestPending = false
+            keyframeRequestTriggered = true
+            shouldContinueDecoding = false
+            keyframeRequestMessage = "Returned false once from decoder callback at frame \(frameCount) to request keyframe / parameter sets."
+            messages.append(keyframeRequestMessage ?? "Returned false once from decoder callback.")
+        } else if decodeTestIdrRequestPending {
+            decodeTestIdrRequestPending = false
+            decodeTestIdrRequestTriggered = true
+            shouldContinueDecoding = false
+            decodeTestIdrRequestMessage = "Returned false once from decoder callback at frame \(frameCount) to request a new IDR/CRA for the decode smoke test."
+            messages.append(decodeTestIdrRequestMessage ?? "Returned false once from decoder callback for decode-test IDR request.")
         }
         lock.unlock()
 
@@ -375,12 +566,50 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
            let bufferPointer = frameData.buffer_ptr,
            bufferSize <= frameFeedMaxFrameSize {
             let data = Data(bytes: bufferPointer, count: Int(bufferSize))
-            frameFeedSinkToCall(ALVRDecoderCopiedFrame(
+            copiedFrameForQueue = ALVRDecoderCopiedFrame(
                 data: data,
                 timestampNs: timestamp,
-                containsIDR: containsIDR
-            ))
+                containsIDR: containsIDR,
+                containsCRA: containsCRA,
+                nalTypes: nalScanResult.firstNalTypes,
+                prefixHex: prefixHex
+            )
+            _ = frameFeedSinkToCall
+        } else if shouldCopyFrameForFeed {
+            copyFailureReason = "copy failed before Data creation"
         }
+
+        if let copiedFrameForQueue {
+            lock.lock()
+            if pendingDecodeFrames.count < maxPendingDecodeFrames,
+               frameFeedCopiedCount < frameFeedMaxFrames {
+                pendingDecodeFrames.append(copiedFrameForQueue)
+                frameFeedCopiedCount += 1
+                frameFeedLastSkipReason = nil
+                feedCallbackLastDecision = "copied"
+                feedCallbackLastSkipReason = nil
+                if decodeTestIdrRequestTriggered,
+                   frameCount > decodeTestIdrRequestFrameBaseline {
+                    frameFeedCopiedAfterIdrRequest = true
+                }
+                messages.append("Copied HEVC random access frame \(frameFeedCopiedCount) into pending decode queue at \(timestamp)")
+            } else {
+                feedCallbackLastDecision = "skipped: pending queue full"
+                feedCallbackLastSkipReason = "pendingDecodeFrameQueueFull"
+                frameFeedLastSkipReason = "pendingDecodeFrameQueueFull"
+                messages.append("Copied HEVC IDR/CRA Data but could not enqueue it because the pending decode queue or copy limit was full.")
+            }
+            lock.unlock()
+        } else if let copyFailureReason {
+            lock.lock()
+            feedCallbackLastDecision = "skipped: \(copyFailureReason)"
+            feedCallbackLastSkipReason = copyFailureReason
+            frameFeedLastSkipReason = copyFailureReason
+            messages.append("Saw HEVC IDR/CRA but did not enqueue it: \(copyFailureReason).")
+            lock.unlock()
+        }
+
+        return shouldContinueDecoding
     }
 
     func snapshot() -> ALVRDecoderMetadataSnapshot {
@@ -459,6 +688,31 @@ final class ALVRDecoderMetadataCollector: @unchecked Sendable {
             hevcPpsData: hevcPpsData,
             h264SpsData: h264SpsData,
             h264PpsData: h264PpsData,
+            keyframeRequestPending: keyframeRequestPending,
+            keyframeRequestTriggered: keyframeRequestTriggered,
+            keyframeRequestCount: keyframeRequestCount,
+            framesSinceKeyframeRequest: keyframeRequestCount > 0 ? max(0, frameCount - keyframeRequestFrameBaseline) : 0,
+            secondsSinceKeyframeRequest: keyframeRequestStartedAt.map { Date().timeIntervalSince($0) },
+            keyframeRequestMessage: keyframeRequestMessage,
+            decodeTestIdrRequestPending: decodeTestIdrRequestPending,
+            decodeTestIdrRequestTriggered: decodeTestIdrRequestTriggered,
+            decodeTestIdrRequestCount: decodeTestIdrRequestCount,
+            framesSinceDecodeTestIdrRequest: decodeTestIdrRequestCount > 0 ? max(0, frameCount - decodeTestIdrRequestFrameBaseline) : 0,
+            secondsSinceDecodeTestIdrRequest: decodeTestIdrRequestStartedAt.map { Date().timeIntervalSince($0) },
+            decodeTestIdrRequestMessage: decodeTestIdrRequestMessage,
+            frameFeedTestEnabled: frameFeedSink != nil,
+            frameFeedWaitingForIdr: frameFeedSink != nil && frameFeedCopiedCount == 0,
+            frameFeedCanCopyFrames: frameFeedSink != nil && frameFeedCopiedCount < frameFeedMaxFrames && pendingDecodeFrames.count < maxPendingDecodeFrames,
+            frameFeedDisabledReason: frameFeedSink == nil ? "feedTestEnabled=false" : nil,
+            frameFeedLastSkipReason: frameFeedLastSkipReason,
+            frameFeedCopiedAfterIdrRequest: frameFeedCopiedCount > 0 && frameFeedCopiedAfterIdrRequest,
+            frameFeedStartedAtFrameCount: frameFeedStartedAtFrameCount,
+            feedCallbackSeenFrameCount: feedCallbackSeenFrameCount,
+            feedCallbackSawIdrOrCraCount: feedCallbackSawIdrOrCraCount,
+            feedCallbackLastNalTypes: feedCallbackLastNalTypes,
+            feedCallbackLastDecision: feedCallbackLastDecision,
+            feedCallbackLastSkipReason: feedCallbackLastSkipReason,
+            pendingDecodeFrameCount: pendingDecodeFrames.count,
             messages: messages
         )
     }
@@ -673,7 +927,6 @@ private let alvrDecoderMetadataCollector = ALVRDecoderMetadataCollector()
 
 private let alvrDecoderMetadataCallback: @convention(c) (AlvrVideoFrameData) -> Bool = { frameData in
     alvrDecoderMetadataCollector.record(frameData: frameData)
-    return true
 }
 #endif
 

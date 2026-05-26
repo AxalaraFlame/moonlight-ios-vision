@@ -128,7 +128,6 @@ private let alvrSessionDiagnosticsMetadataCollector = ALVRDecoderMetadataCollect
 
 private let alvrSessionDiagnosticsMetadataCallback: @convention(c) (AlvrVideoFrameData) -> Bool = { frameData in
     alvrSessionDiagnosticsMetadataCollector.record(frameData: frameData)
-    return true
 }
 #endif
 
@@ -253,7 +252,81 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
     @Published private(set) var isReadingDecoderConfig = false
     @Published private(set) var videoToolboxDecoderCreationResult: ALVRVideoToolboxDecoderCreationResult?
     @Published private(set) var videoToolboxFrameFeedSummary: ALVRVideoToolboxFrameFeedSummary?
+    @Published private(set) var frameFeedTestEnabled = false
+    @Published private(set) var frameFeedWaitingForIdr = false
+    @Published private(set) var frameFeedCanCopyFrames = false
+    @Published private(set) var frameFeedDisabledReason: String?
+    @Published private(set) var frameFeedLastSkipReason: String?
+    @Published private(set) var frameFeedCopiedAfterIdrRequest = false
+    @Published private(set) var frameFeedStartedAtFrameCount: Int?
+    @Published private(set) var feedCallbackSeenFrameCount = 0
+    @Published private(set) var feedCallbackSawIdrOrCraCount = 0
+    @Published private(set) var feedCallbackLastNalTypes: [String] = []
+    @Published private(set) var feedCallbackLastDecision: String?
+    @Published private(set) var feedCallbackLastSkipReason: String?
+    @Published private(set) var pendingDecodeFrameCount = 0
     @Published private(set) var lifecycleWarningMessage: String?
+    @Published private(set) var keyframeRequestPending = false
+    @Published private(set) var keyframeRequestTriggered = false
+    @Published private(set) var keyframeRequestCount = 0
+    @Published private(set) var framesSinceKeyframeRequest = 0
+    @Published private(set) var secondsSinceKeyframeRequest: Double?
+    @Published private(set) var keyframeRequestMessage: String?
+    @Published private(set) var decodeTestIdrRequestPending = false
+    @Published private(set) var decodeTestIdrRequestTriggered = false
+    @Published private(set) var decodeTestIdrRequestCount = 0
+    @Published private(set) var framesSinceDecodeTestIdrRequest = 0
+    @Published private(set) var secondsSinceDecodeTestIdrRequest: Double?
+    @Published private(set) var decodeTestIdrRequestMessage: String?
+
+    var keyframeRequestAvailable: Bool {
+        isRunning
+            && !decoderReady
+            && frameCount > 0
+            && (codecGuess == "hevc" || codecGuess == "h264")
+            && !parameterSetsReady
+            && keyframeRequestCount == 0
+    }
+
+    var decodeTestIdrRequestAvailable: Bool {
+        guard isRunning,
+              decoderReady,
+              videoToolboxDecoderCreationResult?.success == true,
+              let summary = videoToolboxFrameFeedSummary,
+              summary.feedEnabled,
+              summary.copiedFrameCount == 0 || summary.decodedFrameCount == 0,
+              !keyframeRequestPending,
+              !decodeTestIdrRequestPending,
+              decodeTestIdrRequestCount == 0 else {
+            return false
+        }
+        return true
+    }
+
+    var decodeTestIdrRequestDisabledReason: String? {
+        guard isRunning else {
+            return "Session diagnostics is not running."
+        }
+        guard decoderReady else {
+            return "Decoder is not ready."
+        }
+        guard videoToolboxDecoderCreationResult?.success == true else {
+            return "HEVC decoder skeleton has not been created."
+        }
+        guard let summary = videoToolboxFrameFeedSummary, summary.feedEnabled else {
+            return "Enable Feed Test Frames first."
+        }
+        guard summary.copiedFrameCount == 0 || summary.decodedFrameCount == 0 else {
+            return "Frame feed test already copied or decoded frames."
+        }
+        guard !keyframeRequestPending && !decodeTestIdrRequestPending else {
+            return "A one-shot callback request is already pending."
+        }
+        guard decodeTestIdrRequestCount == 0 else {
+            return "Decode-test IDR request was already used for this session."
+        }
+        return nil
+    }
 
     private var diagnosticsTask: Task<Void, Never>?
     private var didReadDecoderConfigSnapshot = false
@@ -283,7 +356,16 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         return false
     }
 
-    func start(clientInfo: ALVRClientInfoResult?, isMdnsBroadcasting: Bool) {
+    var eventLoopRunning: Bool {
+        if case .running = state { return true }
+        return false
+    }
+
+    var alvrCoreReady: Bool {
+        eventLoopRunning
+    }
+
+    func start(clientInfo: ALVRClientInfoResult?) {
         guard !isRunning, !isStopping else {
             return
         }
@@ -295,11 +377,6 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
 
         guard clientInfo?.success == true else {
             fail("Load ALVR Client Info before starting session diagnostics.")
-            return
-        }
-
-        guard isMdnsBroadcasting else {
-            fail("Start ALVR mDNS Broadcast before starting session diagnostics.")
             return
         }
 
@@ -439,10 +516,26 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
 
     func feedTestFramesToHEVCDecoder() {
         guard canFeedTestFramesToHEVCDecoder, let bridge = videoToolboxDecoderBridge else {
+            let reason: String
+            if !isRunning {
+                reason = "Session diagnostics is not running."
+            } else if decoderReady == false {
+                reason = "Decoder is not ready."
+            } else if videoToolboxDecoderCreationResult?.success != true {
+                reason = "Create a HEVC decoder skeleton while session diagnostics are running before feeding test frames."
+            } else if videoToolboxFrameFeedSummary?.feedEnabled == true {
+                reason = "HEVC frame feed smoke test is already enabled."
+            } else {
+                reason = "HEVC frame feed smoke test cannot start in the current state."
+            }
             videoToolboxFrameFeedSummary = ALVRVideoToolboxFrameFeedSummary(
                 feedEnabled: false,
                 copiedFrameCount: 0,
+                copiedIdrFrameCount: 0,
+                copiedCraFrameCount: 0,
                 submittedFrameCount: 0,
+                submittedIdrFrameCount: 0,
+                submittedCraFrameCount: 0,
                 decodedFrameCount: 0,
                 lastDecodeCallStatus: nil,
                 lastCallbackStatus: nil,
@@ -457,22 +550,40 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
                 lastMetalCompatibilityHint: nil,
                 hasLatestDecodedPixelBufferSnapshot: false,
                 lastDecodedTimestampNs: nil,
-                decodeErrors: ["Create a HEVC decoder skeleton while session diagnostics are running before feeding test frames."],
+                fedFrameNalTypes: [],
+                fedFrameWasRandomAccess: false,
+                copiedFramePrefixHex: nil,
+                convertedLengthPrefixedPrefixHex: nil,
+                usedSyntheticPts: false,
+                samplePtsDescription: nil,
+                annexBNalCount: 0,
+                convertedNalCount: 0,
+                convertedSampleSize: 0,
+                firstConvertedNalLength: nil,
+                conversionError: nil,
+                didWaitForAsynchronousFrames: false,
+                decodeErrors: [reason],
                 didCallAlvrReportFrameDecoded: false,
-                messages: ["HEVC frame feed smoke test not attempted."]
+                messages: ["HEVC frame feed smoke test not attempted: \(reason)"]
             )
+            frameFeedTestEnabled = false
+            frameFeedWaitingForIdr = false
+            frameFeedCanCopyFrames = false
+            frameFeedDisabledReason = reason
+            frameFeedLastSkipReason = reason
             return
         }
 
         bridge.resetFrameFeedSummary(feedEnabled: true)
         videoToolboxFrameFeedSummary = bridge.frameFeedSummarySnapshot()
-        messages.append("Enabled HEVC frame feed smoke test. The decoder callback will copy at most 3 frames.")
+        messages.append("Enabled HEVC frame feed smoke test. The decoder callback will copy at most 3 IDR/CRA frames.")
 
         #if canImport(ALVRClientCore)
-        alvrSessionDiagnosticsMetadataCollector.configureFrameFeedSink { [weak bridge] copiedFrame in
-            guard let bridge else { return }
-            _ = bridge.feedAnnexBHEVCFrame(copiedFrame.data, timestampNs: copiedFrame.timestampNs)
+        alvrSessionDiagnosticsMetadataCollector.configureFrameFeedSink { [bridge] copiedFrame in
+            _ = bridge.feedAnnexBHEVCFrame(copiedFrame)
         }
+        let snapshot = alvrSessionDiagnosticsMetadataCollector.snapshot()
+        applySnapshot(snapshot)
         #endif
     }
 
@@ -537,6 +648,31 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         isReadingDecoderConfig = false
         videoToolboxDecoderCreationResult = nil
         videoToolboxFrameFeedSummary = nil
+        frameFeedTestEnabled = false
+        frameFeedWaitingForIdr = false
+        frameFeedCanCopyFrames = false
+        frameFeedDisabledReason = nil
+        frameFeedLastSkipReason = nil
+        frameFeedCopiedAfterIdrRequest = false
+        frameFeedStartedAtFrameCount = nil
+        feedCallbackSeenFrameCount = 0
+        feedCallbackSawIdrOrCraCount = 0
+        feedCallbackLastNalTypes = []
+        feedCallbackLastDecision = nil
+        feedCallbackLastSkipReason = nil
+        pendingDecodeFrameCount = 0
+        keyframeRequestPending = false
+        keyframeRequestTriggered = false
+        keyframeRequestCount = 0
+        framesSinceKeyframeRequest = 0
+        secondsSinceKeyframeRequest = nil
+        keyframeRequestMessage = nil
+        decodeTestIdrRequestPending = false
+        decodeTestIdrRequestTriggered = false
+        decodeTestIdrRequestCount = 0
+        framesSinceDecodeTestIdrRequest = 0
+        secondsSinceDecodeTestIdrRequest = nil
+        decodeTestIdrRequestMessage = nil
         #if canImport(ALVRClientCore)
         alvrSessionDiagnosticsMetadataCollector.configureFrameFeedSink(nil)
         #endif
@@ -584,9 +720,108 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
         firstNalTypes = snapshot.firstNalTypes
         hasParameterSets = snapshot.hasParameterSets
         hasIdr = snapshot.hasIdr
-        parameterSetsReady = snapshot.parameterSetsReady
-        videoToolboxReady = snapshot.videoToolboxReady
-        missingDecoderPrerequisites = snapshot.missingDecoderPrerequisites
+        let configParameterSetsReady = decoderConfigSnapshot?.parameterSetsReady == true
+        let configVideoToolboxReady = decoderConfigSnapshot?.videoToolboxReady == true
+        let effectiveParameterSetsReady = snapshot.parameterSetsReady || configParameterSetsReady || decoderReady
+        let effectiveVideoToolboxReady = snapshot.videoToolboxReady || configVideoToolboxReady || decoderReady
+        parameterSetsReady = effectiveParameterSetsReady
+        videoToolboxReady = effectiveVideoToolboxReady
+        if effectiveParameterSetsReady && !snapshot.parameterSetsReady && configParameterSetsReady {
+            missingDecoderPrerequisites = []
+        } else if effectiveParameterSetsReady && decoderReady {
+            missingDecoderPrerequisites = []
+        } else {
+            missingDecoderPrerequisites = snapshot.missingDecoderPrerequisites
+        }
+        keyframeRequestPending = snapshot.keyframeRequestPending
+        keyframeRequestTriggered = snapshot.keyframeRequestTriggered
+        keyframeRequestCount = snapshot.keyframeRequestCount
+        framesSinceKeyframeRequest = snapshot.framesSinceKeyframeRequest
+        secondsSinceKeyframeRequest = snapshot.secondsSinceKeyframeRequest
+        keyframeRequestMessage = snapshot.keyframeRequestMessage
+        decodeTestIdrRequestPending = snapshot.decodeTestIdrRequestPending
+        decodeTestIdrRequestTriggered = snapshot.decodeTestIdrRequestTriggered
+        decodeTestIdrRequestCount = snapshot.decodeTestIdrRequestCount
+        framesSinceDecodeTestIdrRequest = snapshot.framesSinceDecodeTestIdrRequest
+        secondsSinceDecodeTestIdrRequest = snapshot.secondsSinceDecodeTestIdrRequest
+        decodeTestIdrRequestMessage = snapshot.decodeTestIdrRequestMessage
+        frameFeedTestEnabled = snapshot.frameFeedTestEnabled
+        frameFeedWaitingForIdr = snapshot.frameFeedWaitingForIdr
+        frameFeedCanCopyFrames = snapshot.frameFeedCanCopyFrames && decoderReady && videoToolboxDecoderBridge != nil
+        frameFeedDisabledReason = snapshot.frameFeedDisabledReason
+        frameFeedLastSkipReason = snapshot.frameFeedLastSkipReason
+        frameFeedCopiedAfterIdrRequest = snapshot.frameFeedCopiedAfterIdrRequest
+        frameFeedStartedAtFrameCount = snapshot.frameFeedStartedAtFrameCount
+        feedCallbackSeenFrameCount = snapshot.feedCallbackSeenFrameCount
+        feedCallbackSawIdrOrCraCount = snapshot.feedCallbackSawIdrOrCraCount
+        feedCallbackLastNalTypes = snapshot.feedCallbackLastNalTypes
+        feedCallbackLastDecision = snapshot.feedCallbackLastDecision
+        feedCallbackLastSkipReason = snapshot.feedCallbackLastSkipReason
+        pendingDecodeFrameCount = snapshot.pendingDecodeFrameCount
+    }
+
+    private func drainPendingDecodeFrames() {
+        #if canImport(ALVRClientCore)
+        guard let bridge = videoToolboxDecoderBridge else {
+            return
+        }
+
+        let pendingFrames = alvrSessionDiagnosticsMetadataCollector.takePendingDecodeFrames(limit: 3)
+        guard !pendingFrames.isEmpty else {
+            return
+        }
+
+        for pendingFrame in pendingFrames {
+            _ = bridge.feedAnnexBHEVCFrame(pendingFrame)
+        }
+        videoToolboxFrameFeedSummary = bridge.frameFeedSummarySnapshot()
+        let postDrainSnapshot = alvrSessionDiagnosticsMetadataCollector.snapshot()
+        applySnapshot(postDrainSnapshot)
+        #endif
+    }
+
+    func requestKeyframeParameterSets() {
+        guard keyframeRequestAvailable else {
+            keyframeRequestMessage = "Keyframe / parameter set request is not available for the current session state."
+            return
+        }
+
+        #if canImport(ALVRClientCore)
+        let didArmRequest = alvrSessionDiagnosticsMetadataCollector.requestKeyframeParameterSetsOnce()
+        let snapshot = alvrSessionDiagnosticsMetadataCollector.snapshot()
+        applySnapshot(snapshot)
+        if didArmRequest {
+            keyframeRequestMessage = "Will return false once from decoder callback to request keyframe / parameter sets."
+            messages.append(keyframeRequestMessage ?? "Keyframe request armed.")
+        } else {
+            keyframeRequestMessage = "Keyframe / parameter set request was already used for this session."
+            messages.append(keyframeRequestMessage ?? "Keyframe request unavailable.")
+        }
+        #else
+        keyframeRequestMessage = "ALVRClientCore import is unavailable."
+        #endif
+    }
+
+    func requestDecodeTestIdr() {
+        guard decodeTestIdrRequestAvailable else {
+            decodeTestIdrRequestMessage = decodeTestIdrRequestDisabledReason ?? "Decode-test IDR request is not available for the current session state."
+            return
+        }
+
+        #if canImport(ALVRClientCore)
+        let didArmRequest = alvrSessionDiagnosticsMetadataCollector.requestDecodeTestIdrOnce()
+        let snapshot = alvrSessionDiagnosticsMetadataCollector.snapshot()
+        applySnapshot(snapshot)
+        if didArmRequest {
+            decodeTestIdrRequestMessage = "Will return false once from decoder callback to request a new IDR/CRA for the decode smoke test."
+            messages.append(decodeTestIdrRequestMessage ?? "Decode-test IDR request armed.")
+        } else {
+            decodeTestIdrRequestMessage = "Decode-test IDR request was already used for this session."
+            messages.append(decodeTestIdrRequestMessage ?? "Decode-test IDR request unavailable.")
+        }
+        #else
+        decodeTestIdrRequestMessage = "ALVRClientCore import is unavailable."
+        #endif
     }
 
     private func handleAutomaticDecoderConfigSnapshot(_ snapshot: ALVRDecoderConfigSnapshot, reason: String) {
@@ -1192,6 +1427,7 @@ final class ALVRSessionDiagnosticsManager: ObservableObject, @unchecked Sendable
                 owner.hapticsEventSeen = hapticsEventSeen
                 owner.applySnapshot(snapshot)
                 owner.handleInBandParameterSetsIfReady(snapshot)
+                owner.drainPendingDecodeFrames()
                 owner.videoToolboxFrameFeedSummary = owner.videoToolboxDecoderBridge?.frameFeedSummarySnapshot()
             }
         }
